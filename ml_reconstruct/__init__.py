@@ -3,7 +3,7 @@ signals, used by the trainMLP*.ipynb / PL19_EML.ipynb notebooks.
 
     data      LanternDataset (signals + coefficients + core positions), Standardizer
     simulate  dataset generation with batch_pipeline / multi_wvl
-              (imported on demand: it needs the full cbeam stack)
+              (imported on demand: it needs a cbeam checkout, see CBEAM_EXAMPLES)
     mlp       JAX MLP, Adam training, save / load
     sparse    polynomial features, dense ridge and OMP (term-budget) fits
     zernike   Noll Zernike basis sampled at the output cores

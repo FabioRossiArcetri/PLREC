@@ -14,13 +14,28 @@ Two measurement models:
 
 Columns follow the lantern's port order (``p["output_positions"]``), which is
 also the order of ChainPropagator.to_channel_basis().
+
+The propagation uses ``batch_pipeline`` and ``multi_wvl`` from a cbeam
+checkout's ``examples/`` folder: ``CBEAM_EXAMPLES`` (default
+``../cbeam/examples`` next to this repository). The lantern
+characterizations are loaded from, and cached in, its ``data/`` folder.
 """
 from __future__ import annotations
+
+import contextlib
+import os
+import sys
 
 import numpy as np
 from scipy.interpolate import LinearNDInterpolator
 
-import batch_pipeline as bp
+CBEAM_EXAMPLES = os.path.abspath(os.environ.get(
+    "CBEAM_EXAMPLES",
+    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, "cbeam", "examples")))
+if CBEAM_EXAMPLES not in sys.path:
+    sys.path.insert(0, CBEAM_EXAMPLES)
+
+import batch_pipeline as bp  # noqa: E402
 
 from .data import LanternDataset
 
@@ -42,7 +57,8 @@ def simulate_core_images(p, ifunc, coeff, n_train, *, prop12=None, window=5,
         grid_resolution x grid_resolution grid over the output face.
     """
     if prop12 is None:
-        prop12 = bp.build_and_characterize_lantern(p, reuse_cache=True)
+        with contextlib.chdir(CBEAM_EXAMPLES):     # its data/ holds the caches
+            prop12 = bp.build_and_characterize_lantern(p, reuse_cache=True)
     pipeline = bp.BatchPropagationPipeline(prop12, p, ifunc)
 
     u0 = pipeline.generate_batch_modal_coefficients(coeff, use_gpu=False)
@@ -80,12 +96,13 @@ def simulate_spectra(base_params, ifunc, coeff, n_train, wavelengths_nm,
     """Spectral dataset: ``coeff`` (n, n_modes) [nm] -> per-channel coupled
     power fractions (n, n_wl, n_cores), one lantern characterization per
     wavelength (MultiWavelengthPropagationPipeline; ``pipeline_kwargs`` are
-    passed to it, e.g. auto_mode_bookkeeping=True)."""
+    passed to it, e.g. verbose=False)."""
     import multi_wvl as mw
 
     mwp = mw.MultiWavelengthPropagationPipeline(
         base_params, ifunc, wavelengths_nm, **pipeline_kwargs)
-    power, wl = mwp.get_power_spectra(coeff)                        # (n_wl, n, n_cores)
+    with contextlib.chdir(CBEAM_EXAMPLES):         # its data/ holds the caches
+        power, wl = mwp.get_power_spectra(coeff)                    # (n_wl, n, n_cores)
     return LanternDataset(
         signals=np.ascontiguousarray(power.transpose(1, 0, 2)),
         coeff=np.asarray(coeff, float), n_train=int(n_train),

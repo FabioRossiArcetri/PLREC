@@ -1,7 +1,6 @@
-"""Unit tests for ``examples/ml_reconstruct`` on small synthetic problems.
+"""Unit tests for ``ml_reconstruct`` on small synthetic problems.
 
-Skipped when jax, optax or scikit-learn are not installed (they are optional
-dependencies of the ML examples only).
+Skipped when jax, optax or scikit-learn are not installed.
 """
 
 import pathlib
@@ -14,9 +13,9 @@ pytest.importorskip("jax")
 pytest.importorskip("optax")
 pytest.importorskip("sklearn")
 
-EXAMPLES = pathlib.Path(__file__).resolve().parents[2] / "examples"
-if str(EXAMPLES) not in sys.path:
-    sys.path.insert(0, str(EXAMPLES))
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import ml_reconstruct as ml  # noqa: E402
 from cbeam.waveguide import hex_ring_positions  # noqa: E402
