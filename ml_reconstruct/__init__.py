@@ -14,7 +14,10 @@ from __future__ import annotations
 
 from .data import LanternDataset, Standardizer, subsample_rows, rmse_nm
 from .cache import ModelCache
-from .mlp import init_mlp_params, mlp_forward, huber_loss, train_mlp, save_mlp, load_mlp
+from .mlp import (
+    init_mlp_params, mlp_forward, mlp_forward_np, n_params, huber_loss, train_mlp, save_mlp,
+    load_mlp,
+)
 from .sparse import (
     n_poly_terms, poly_features, omp_fit, omp_predict, fit_omp_poly, predict_omp_poly,
     n_terms, fit_dense_poly_ridge, predict_dense_poly_ridge,
@@ -27,7 +30,7 @@ from .unwrap import (
 
 __all__ = [
     "LanternDataset", "Standardizer", "subsample_rows", "rmse_nm", "ModelCache",
-    "init_mlp_params", "mlp_forward", "huber_loss", "train_mlp", "save_mlp", "load_mlp",
+    "init_mlp_params", "mlp_forward", "mlp_forward_np", "n_params", "huber_loss", "train_mlp", "save_mlp", "load_mlp",
     "n_poly_terms", "poly_features", "omp_fit", "omp_predict", "fit_omp_poly",
     "predict_omp_poly", "n_terms", "fit_dense_poly_ridge", "predict_dense_poly_ridge",
     "noll_to_nm", "zernike", "zernike_basis", "modal_projector",

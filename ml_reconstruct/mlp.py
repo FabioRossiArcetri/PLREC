@@ -61,6 +61,26 @@ def mlp_forward(params: Dict, X: jnp.ndarray, key: jax.Array = None,
     return jnp.dot(X, weights[-1]) + biases[-1]
 
 
+def mlp_forward_np(params: Dict, X: np.ndarray) -> np.ndarray:
+    """Inference-only forward pass in plain numpy (no jax dispatch), e.g. to
+    time the per-sample latency of a real-time reconstructor on the CPU.
+    Same result as ``mlp_forward(params, X)``."""
+    weights = [np.asarray(w) for w in params["weights"]]
+    biases = [np.asarray(b) for b in params["biases"]]
+    X = np.asarray(X, dtype=weights[0].dtype)
+    for i in range(len(weights) - 1):
+        X = X @ weights[i] + biases[i]
+        if i < 2:
+            X = (X - X.mean(axis=-1, keepdims=True)) / np.sqrt(X.var(axis=-1, keepdims=True) + 1e-5)
+        X = X * np.tanh(np.logaddexp(0.0, X))
+    return X @ weights[-1] + biases[-1]
+
+
+def n_params(layer_sizes: Sequence[int]) -> int:
+    """Number of weights and biases of an MLP with these layer sizes."""
+    return int(sum((a + 1) * b for a, b in zip(layer_sizes[:-1], layer_sizes[1:])))
+
+
 @jax.jit
 def huber_loss(y_true: jnp.ndarray, y_pred: jnp.ndarray, delta: float = 1.0) -> jnp.ndarray:
     error = y_true - y_pred
@@ -72,11 +92,15 @@ def huber_loss(y_true: jnp.ndarray, y_pred: jnp.ndarray, delta: float = 1.0) -> 
 
 def train_mlp(layer_sizes: Sequence[int], X_train, Y_train, X_val, Y_val, *,
               epochs: int = 500, batch_size: int = 128, learning_rate: float = 3e-4,
-              init_seed: int = 0, train_seed: int = 1, log_every: int = 100):
+              lr_schedule: str = "constant", init_seed: int = 0, train_seed: int = 1,
+              log_every: int = 100):
     """Train with Adam on minibatches reshuffled every epoch (the last partial
     batch is dropped). Each epoch is one jit-compiled ``lax.scan`` over its
     minibatches, so the data stays on the device and Python only loops over
     epochs.
+
+    lr_schedule : "constant", or "cosine" (decays from learning_rate to 1% of
+        it over the whole run).
 
     Returns ``(params, history)``: the parameters of the epoch with the lowest
     validation loss, and ``{"train": [...], "val": [...], "best_epoch": int,
@@ -85,9 +109,15 @@ def train_mlp(layer_sizes: Sequence[int], X_train, Y_train, X_val, Y_val, *,
     X_train, Y_train = jnp.asarray(X_train), jnp.asarray(Y_train)
     X_val, Y_val = jnp.asarray(X_val), jnp.asarray(Y_val)
     params = init_mlp_params(list(layer_sizes), random.PRNGKey(init_seed))
-    opt = optax.adam(learning_rate)
-    opt_state = opt.init(params)
     n_steps = X_train.shape[0] // batch_size
+    if lr_schedule == "cosine":
+        lr = optax.cosine_decay_schedule(learning_rate, decay_steps=epochs * n_steps, alpha=0.01)
+    elif lr_schedule == "constant":
+        lr = learning_rate
+    else:
+        raise ValueError(f"lr_schedule must be 'constant' or 'cosine', not {lr_schedule!r}")
+    opt = optax.adam(lr)
+    opt_state = opt.init(params)
 
     def step(carry, idx):
         params, opt_state, key = carry

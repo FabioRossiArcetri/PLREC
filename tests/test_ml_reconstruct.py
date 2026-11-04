@@ -135,3 +135,22 @@ def test_train_mlp_and_save_load(tmp_path):
     back, layers, extra = ml.load_mlp(path)
     assert layers == [6, 32, 32, 2] and int(extra["best_epoch"]) == hist["best_epoch"]
     np.testing.assert_allclose(ml.mlp_forward(back, X[500:]), ml.mlp_forward(params, X[500:]))
+
+
+def test_mlp_cosine_schedule_numpy_forward_and_n_params():
+    rng = np.random.default_rng(5)
+    X = rng.normal(size=(300, 4)).astype(np.float32)
+    Y = np.stack([X[:, 0] * X[:, 1], np.cos(X[:, 2])], axis=1).astype(np.float32)
+    layers = [4, 16, 16, 16, 2]
+    params, hist = ml.train_mlp(layers, X[:250], Y[:250], X[250:], Y[250:], epochs=40,
+                                batch_size=25, learning_rate=3e-3, lr_schedule="cosine",
+                                log_every=0)
+    assert min(hist["val"]) < 0.5 * hist["val"][0]
+    import jax
+    with jax.default_matmul_precision("highest"):     # GPU default: TF32 matmuls, ~1e-3
+        ref = ml.mlp_forward(params, X[250:])
+    np.testing.assert_allclose(ml.mlp_forward_np(params, X[250:]), ref, rtol=1e-4, atol=1e-5)
+    assert ml.n_params(layers) == sum(w.size + b.size for w, b in
+                                      zip(params["weights"], params["biases"]))
+    with pytest.raises(ValueError):
+        ml.train_mlp(layers, X, Y, X, Y, epochs=1, lr_schedule="step")
