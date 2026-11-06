@@ -1,0 +1,603 @@
+\documentclass[aspectratio=169,10pt]{beamer}
+\usetheme{Madrid}
+\usecolortheme{default}
+\usepackage{amsmath,amssymb,graphicx,booktabs}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
+
+\title[The Photonic Lantern as a Wavefront Sensor]{The Photonic Lantern as a Wavefront Sensor}
+\subtitle{An Extended Tutorial}
+\author{Fabio Rossi}
+\date{October 31, 2026}
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+\begin{frame}{Outline}
+\tableofcontents
+\end{frame}
+
+% ------------------------------------------------------------
+\section{Introduction}
+% ------------------------------------------------------------
+\begin{frame}{The Problem: Limits of Pupil-Plane Sensors}
+\begin{itemize}
+    \item Shack-Hartmann and pyramid sensors work in or near a pupil plane.
+    \item They measure local gradients of the wavefront phase.
+    \item Large dynamic range, well-understood.
+    \item \textbf{Three problems} become dominant when the atmosphere is already well corrected:
+    \begin{enumerate}
+        \item Non-common-path aberrations (NCPA): invisible to the WFS.
+        \item Petal/island modes: zero gradient where the light is.
+        % [CORRECTION] Nuance: finite-width spiders produce weak diffraction signal
+        \item \emph{In practice, finite-width spiders provide a weak non-zero signal through edge diffraction, but the response remains far below that of a focal-plane sensor.}
+        \item Photon loss: light is diverted to a separate sensing arm.
+    \end{enumerate}
+\end{itemize}
+\end{frame}
+
+\begin{frame}{The Photonic Lantern Solution}
+\begin{itemize}
+    \item Placed at the \textbf{science focus}: no non-common path.
+    \item Measures the part of the focal field that couples into its guided modes.
+    \item Internal modes interfere with \textbf{fixed, device-specific phases}.
+    \item Restores sign information for even aberrations.
+    \item Outputs are single-mode fibres: same photons used for sensing and science.
+    \item \textbf{Price:} Low-order sensor, modest dynamic range, device-specific response.
+    % [CORRECTION] Quantify the modest dynamic range
+    \item \emph{Linear range is typically well below one radian rms of residual phase.}
+\end{itemize}
+\end{frame}
+
+% ------------------------------------------------------------
+\section{Wave-Optics Background}
+% ------------------------------------------------------------
+\begin{frame}{From Maxwell to the Paraxial Equation}
+\begin{itemize}
+    \item Scalar Helmholtz equation (weakly guiding approximation):
+    \[
+        \nabla^2 E + k_0^2 n^2(\mathbf{r}) E = 0, \quad k_0 = \frac{2\pi}{\lambda}
+    \]
+    \item Paraxial wave equation (envelope \(u\)):
+    \[
+        \frac{\partial u}{\partial z} = \frac{i}{2 k_0 n_0} \left[ \nabla_\perp^2 + k_0^2 (n^2 - n_0^2) \right] u
+    \]
+    \item \textbf{Quantum-mechanical analogy:} propagation distance \(z\) \(\leftrightarrow\) time \(t\).
+    \item A waveguide is a two-dimensional potential well.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Pupil, Focal Plane, and the Fourier Transform}
+\begin{itemize}
+    \item Pupil field: \(P(x,y) e^{i\varphi(x,y)}\).
+    \item Focal field: \(E = \mathcal{F}[P e^{i\varphi}]\).
+    \item Fourier transform is \textbf{unitary}: \(\int |E|^2 = \int |P|^2\).
+    \item Aberrations expanded on Zernike polynomials \(Z_m\):
+    \[
+        \varphi(x,y) = \sum_m a_m Z_m(x,y), \qquad
+        \frac{1}{A_P} \iint_P Z_m Z_{m'} \, dx\, dy = \delta_{m m'}
+    \]
+    % [CORRECTION] Clarify that coefficients are rms phase in radians
+    \item \emph{With this normalisation, the coefficients $a_m$ are root-mean-square phase errors in radians.}
+    \item Under inversion \((x,y) \to (-x,-y)\), Zernikes are either even or odd.
+\end{itemize}
+\end{frame}
+
+% ------------------------------------------------------------
+\section{Guided Modes of Optical Fibres}
+% ------------------------------------------------------------
+\begin{frame}{Modes as Eigenfunctions}
+\begin{itemize}
+    \item Seek solutions \(E(x,y,z) = \psi(x,y) e^{i\beta z}\).
+    \item Eigenvalue problem: \(\nabla_\perp^2 \psi + k_0^2 n^2(x,y) \psi = \beta^2 \psi\).
+    \item Effective index: \(n_{\mathrm{eff}} = \beta / k_0\).
+    \item Guided modes: \(n_2 < n_{\mathrm{eff}} < n_1\).
+    % [CORRECTION] Clarify completeness and radiation loss
+    \item \emph{The guided modes plus the radiation continuum form a complete set; the part projected onto radiation modes is lost within a short distance.}
+\end{itemize}
+\end{frame}
+
+\begin{frame}{The Quantum-Well Analogy}
+% [CORRECTION] Add the 2D bound-state nuance
+\begin{itemize}
+    \item A step-index fibre is a circular well of depth \(k_0^2(n_1^2 - n_2^2)\) and radius $a$.
+    \item Guided modes are bound states; radiation modes are scattering states.
+    \item \emph{A two-dimensional well always has at least one bound state, so a fibre always guides the fundamental mode, however weak the index contrast.}
+    \item A finite well has a finite number of bound states \(\Rightarrow\) a fibre guides a finite number of modes.
+    \item Two identical wells side by side split each level into symmetric and antisymmetric combinations: the directional coupler.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{The V Number and Mode Count}
+\[
+    V = \frac{2\pi a}{\lambda} \sqrt{n_1^2 - n_2^2} = \frac{2\pi a}{\lambda} \mathrm{NA}
+\]
+\begin{itemize}
+    \item \textbf{Single-mode condition:} \(V < 2.405\).
+    \item Common lantern sizes: 3, 6, 19 ports.
+    \item These correspond to mode-count windows of an ideal step-index guide.
+    % [CORRECTION] Emphasise that the table is a guide, not a design rule
+    \item \emph{The 19-mode window \(8.417 < V < 8.654\) is narrow; real lanterns are not exactly step-index circles, so the table is a guide rather than a design rule.}
+    \item Large \(V\): number of spatial modes \(\approx V^2/4\) (about \(V^2/2\) including polarisation).
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Shape and Size of the Fundamental Mode}
+% [CORRECTION] Clarify Marcuse formula and 1/e vs 1/e^2 radius
+\begin{itemize}
+    \item \(\mathrm{LP}_{01}\) is well approximated by a Gaussian \(\psi \propto \exp(-r^2/w^2)\).
+    \item Marcuse's empirical formula (accurate to $\sim 1\%$ for \(1.2 < V < 2.4\)):
+    \[
+        \frac{w}{a} \approx 0.65 + \frac{1.619}{V^{3/2}} + \frac{2.879}{V^6}
+    \]
+    \item At \(V = 2\), \(w \approx 1.27\,a\).
+    \item \emph{Here $w$ is the mode-field radius (1/e field radius), not the intensity radius, which is $w/\sqrt{2}$.}
+    \item As \(V\) decreases the mode spreads into the cladding: this is what happens to each core at the multimode end of a lantern.
+\end{itemize}
+\end{frame}
+
+% ------------------------------------------------------------
+\section{Coupling Light into Fibres}
+% ------------------------------------------------------------
+\begin{frame}{Projection onto Modes}
+\begin{itemize}
+    \item Amplitude launched into guided mode \(n\):
+    \[
+        u_n = \langle \psi_n | E \rangle = \iint \psi_n^*(x,y) E(x,y) \, dx\, dy
+    \]
+    \item Fraction of power coupled: \(\eta_n = |u_n|^2 / \langle E|E\rangle\).
+    \item \textbf{Key point:} The fibre responds only to the \(N\) projections \(u_n\).
+    \item Everything outside the guided subspace is discarded.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Single-Mode vs. Multimode Fibres}
+\begin{itemize}
+    \item \textbf{Single-mode:} One overlap \(u_{01}\).
+    % [CORRECTION] Clarify the 80% depends on focal ratio
+    \item Maximum efficiency $\sim 80\%$ for an unobstructed circular pupil; \emph{the exact value depends on the focal ratio $F$ and on the definition of $w$.}
+    \item Efficiency falls with Strehl: \(\eta \approx \eta_{\max} S\).
+    \item \textbf{Multimode:} Captures projection on \(N\)-dimensional subspace.
+    \item Output is a speckle field: modal noise.
+    \item \textbf{Information argument:} Ideal device keeps all \(N\) modes in separate channels.
+\end{itemize}
+\end{frame}
+
+% ------------------------------------------------------------
+\section{The Photonic Lantern}
+% ------------------------------------------------------------
+\begin{frame}{Construction and Principle}
+\begin{itemize}
+    \item Slowly tapered waveguide: \(N\) single-mode cores \(\to\) one few-mode core.
+    \item \textbf{Mode conservation:} Adiabatic transition preserves the number of modes.
+    \item \textbf{Supermode picture:}
+    \begin{itemize}
+        \item SM end: \(N\) degenerate core modes.
+        \item Transition: cores couple, degeneracy lifted, supermodes form.
+        \item MM end: supermodes become LP modes of a few-mode guide.
+    \end{itemize}
+    \item Transfer matrix: \(\mathbf{v} = \mathbf{A} \mathbf{u}\).
+    % [CORRECTION] Clarify unitarity is within guided subspace
+    \item \emph{\(\mathbf{A}\) is unitary with respect to the guided-mode subspace for an ideal lossless lantern; radiation losses appear as singular values below unity.}
+\end{itemize}
+\end{frame}
+
+\begin{frame}{The Transfer Matrix}
+\[
+    v_k = \sum_{n=1}^{N} A_{kn} u_n
+\]
+\begin{itemize}
+    \item Column \(n\): output produced by launching LP mode \(n\) alone.
+    \item \textbf{Unitarity:} \(A^\dagger A = 1\) for an ideal lantern (guided subspace only).
+    \item \textbf{Density:} Each input mode illuminates many outputs.
+    \item \textbf{Sensitivity:} \(A\) depends on wavelength, temperature, and geometry.
+    \item \(A\) must be \textbf{measured} or \textbf{simulated}, not predicted from nominal design.
+    % [CORRECTION] Add the reciprocity note
+    \item \emph{Reciprocity: light sent backwards is described by $A^T$, not $A^{-1}$, in the appropriate mode basis.}
+\end{itemize}
+\end{frame}
+
+\begin{frame}{The Single-Mode End: Degeneracy and Freezing}
+% [CORRECTION] Add the adiabatic criterion failure nuance
+\begin{itemize}
+    \item Near the SM end, the \(N\) levels merge into a degenerate one and \(\Delta\beta \to 0\): the adiabatic criterion fails.
+    \item \emph{This is mostly harmless: the cores are also decoupling, tunnelling falls exponentially, and the evolution ``freezes''.}
+    \item The final mapping from input modes to output cores is very sensitive to the last part of the transition.
+    \item \emph{Two lanterns made to the same design can have quite different mappings: every lantern must be calibrated individually.}
+    \item A \textbf{mode-selective} lantern (dissimilar cores) has a permutation-like \(A\): wrong property for a wavefront sensor.
+\end{itemize}
+\end{frame}
+
+% ------------------------------------------------------------
+\section{The Lantern as a Wavefront Sensor}
+% ------------------------------------------------------------
+\begin{frame}{Forward Model}
+\begin{enumerate}
+    \item Pupil field: \(P(x,y) e^{i\varphi(x,y)}\).
+    \item Focal field: \(E = \mathcal{F}[P e^{i\varphi}]\).
+    \item Projection: \(u_n = \langle \psi_n | E \rangle\).
+    \item Lantern: \(\mathbf{v} = \mathbf{A} \mathbf{u}\).
+    \item Detection: \(p_k = |v_k|^2\).
+\end{enumerate}
+\[
+    p_k(\varphi) = \left| \sum_{n=1}^{N} A_{kn} \langle \psi_n | \mathcal{F}[P e^{i\varphi}] \rangle \right|^2
+\]
+\end{frame}
+
+\begin{frame}{Each Output is an Interferometer}
+Expand the modulus squared:
+\[
+    p_k = \sum_n |A_{kn}|^2 |u_n|^2 + 2 \sum_{n < n'} \mathrm{Re}\left[ A_{kn} A_{kn'}^* u_n u_{n'}^* \right]
+\]
+\begin{itemize}
+    \item First sum: depends only on modal powers.
+    \item Second sum: \textbf{interference terms}.
+    \item Each output port is an \(N\)-beam interferometer.
+    \item Phase offsets \(\arg A_{kn} - \arg A_{kn'}\) are fixed by fabrication.
+    % [CORRECTION] Add the rank-one Hermitian matrix formulation
+    \item \emph{In matrix form: $p_k = u^\dagger M_k u$, with $M_k = a_k a_k^\dagger$ a rank-one Hermitian matrix.}
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Linear Response and the Sign of Even Aberrations}
+Write \(\varphi = \sum_m a_m Z_m\). To first order:
+\[
+    p_k \approx p_{0,k} + \sum_m B_{km} a_m
+\]
+\begin{itemize}
+    \item \textbf{Even Zernikes:} \(B_{km} \propto \mathrm{Im}[A_{kn}^* A_{kn'}]\).
+    \item \textbf{Odd Zernikes:} \(B_{km} \propto \mathrm{Re}[A_{kn}^* A_{kn'}]\).
+\end{itemize}
+\begin{block}{Why the lantern senses even aberrations}
+\begin{itemize}
+    \item A plain camera: \(A_{kn} = \psi_n(\xi_k)\) is real, so \(\mathrm{Im}[A^* A] = 0\).
+    \item A mode-selective lantern: \(A\) is diagonal, so both sums vanish: \emph{blind at first order to every aberration, even and odd.}
+    \item A \textbf{standard lantern}: rows mix even and odd modes with non-trivial phases \(\Rightarrow\) even aberrations sensed with sign.
+\end{itemize}
+\end{block}
+\end{frame}
+
+\begin{frame}{How Many Modes Can Be Sensed?}
+\begin{itemize}
+    \item Interaction matrix \(B\) has \(N\) rows.
+    \item Rank \(\leq N\) (at most \(N\) modes per wavelength channel and polarisation).
+    % [CORRECTION] Clarify idealised rank bound
+    \item \emph{Under idealisations (lossless, centred PSF, symmetric pupil): rank \(\leq N-1\), because the rows of $B$ sum to zero.}
+    \item Practical limit set by \textbf{conditioning} of \(B\) relative to noise.
+    \item More measurements: spectral dispersion, polarisation diversity.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Noise, Dynamic Range, and Petal Modes}
+\begin{itemize}
+    \item Photon-noise limit: error covariance \(\propto 1/N_{\mathrm{ph}}\).
+    \item Linear range: residual wavefronts below \(\sim 1\) radian rms.
+    \item Beyond linear range: saturation, then folding (wrong sign).
+    \item \textbf{Petal modes:} Strongly excite low-order LP modes \(\Rightarrow\) linear response.
+    \item Slope-based sensors see petal modes only weakly (through edge diffraction).
+    % [CORRECTION] Add the experimental range observation
+    \item \emph{Lin et al. report stable closed-loop operation up to about 400 nm of low-order Zernike error.}
+\end{itemize}
+\end{frame}
+
+% ------------------------------------------------------------
+\section{Calibration, Reconstruction, and Experiments}
+% ------------------------------------------------------------
+\begin{frame}{Calibration}
+\begin{enumerate}
+    \item \textbf{Reference:} Record fluxes \(p_0\) with best available wavefront.
+    \item \textbf{Push-pull:} Apply \(\pm \delta Z_m\) on DM, record fluxes.
+    \item Centred difference gives column \(m\) of \(B\):
+    \[
+        B_{\cdot m} \approx \frac{p(+\delta Z_m) - p(-\delta Z_m)}{2\delta}
+    \]
+    \item \textbf{Normalisation:} Divide by sum of fluxes to remove source fluctuations.
+\end{enumerate}
+% [CORRECTION] Add the point about p0 defining the convergence point
+\begin{block}{The reference $p_0$ is critical}
+\emph{Any error in $p_0$ becomes a static aberration in the corrected wavefront. A common choice is the wavefront that maximises a science metric (coupling, contrast).}
+\end{block}
+\end{frame}
+
+\begin{frame}{Linear Reconstruction and Closed Loop}
+\begin{itemize}
+    \item Reconstructor: \(R = V \Sigma^+ U^T\) (pseudo-inverse of \(B\)).
+    \item Singular values below threshold set to zero (avoid noise amplification).
+    \item Integrator loop:
+    \[
+        c_{t+1} = (1-\ell) c_t - g R (p_t - p_0)
+    \]
+    \item Must start from a wavefront inside the linear range.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Beyond the Linear Regime}
+\begin{itemize}
+    \item Second-order models (quadratic reconstructors).
+    \item Model-based phase retrieval (fit full forward model).
+    \item Neural networks (learn inverse map from data).
+    \item Spectral dispersion (independent measurements per channel).
+    \item Pre- and post-lantern optics (phase masks, interferometric recombination).
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Experimental Record and Comparison}
+\begin{table}
+\centering
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Year} & \textbf{Reference} & \textbf{Result} \\
+\midrule
+2025 & Lin et al. & On-sky spectral dispersion; improved correction \\
+2023 & Lin et al. & Real-time closed loop; petal modes corrected \\
+2020 & Norris et al. & 19-output lantern; neural-network reconstruction \\
+2018 & Corrigan et al. & First laboratory demonstration \\
+\bottomrule
+\end{tabular}
+\end{table}
+\begin{itemize}
+    \item \textbf{Complementary role:} Pupil-plane sensors for first stage; lantern for common-path, petal-sensitive second stage.
+\end{itemize}
+\end{frame}
+
+% ------------------------------------------------------------
+\section{Simulating a Lantern I: Goals and Models}
+% ------------------------------------------------------------
+\begin{frame}{What a Simulation Must Deliver}
+\begin{itemize}
+    \item Input basis: \(N\) guided modes \(\psi_n\) of the multimode section.
+    \item Output basis: fundamental modes of the \(N\) single-mode cores.
+    \item Transfer matrix \(A(\lambda)\): column \(n\) obtained by launching \(\psi_n\) alone and projecting output.
+    % [CORRECTION] Clarify the phase convention carefully
+    \item \textbf{Phase conventions:} \(A\) is meaningful only up to a diagonal matrix of phases on the left (row phases have no observable effect).
+    \item \emph{The column phases must be fixed consistently with the convention used to compute $\mathbf{u}$.}
+    \item \textbf{Degenerate pairs:} Orientation must be consistent between simulation and telescope model.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Why Full-Wave Methods Are Impractical}
+\begin{itemize}
+    \item FDTD: \(1000 \times 1000 \times 300000 \approx 3 \times 10^{11}\) cells.
+    \item Six field components per cell, time stepping over full device.
+    \item Far beyond routine computing.
+    \item \textbf{Better approaches:}
+    \begin{itemize}
+        \item Beam Propagation Method (BPM): evolve field on a 2-D grid.
+        \item Coupled-Mode Theory (CMT): evolve \(N\) amplitudes on local supermodes.
+        \item Eigenmode Expansion (EME): discrete-step version of CMT.
+    \end{itemize}
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Idealised Models}
+\begin{itemize}
+    \item \textbf{Random unitary matrices:} Model a ``typical'' lantern.
+    % [CORRECTION] Fix the Haar measure recipe typesetting
+    \item Recipe: draw an \(N \times N\) complex Gaussian matrix $Z$; compute $Z = QR$; multiply column $j$ of $Q$ by $R_{jj}/|R_{jj}|$.
+    \item \emph{The last step is essential: without it the distribution is not uniform.}
+    \item \textbf{Structured matrices:} Mode-selective lantern (\(A\) diagonal), or supermode mapping by symmetry.
+    \item \textbf{Measured matrices:} Fit forward model to laboratory data.
+\end{itemize}
+\end{frame}
+
+% ------------------------------------------------------------
+\section{Simulating a Lantern II: Beam Propagation Method}
+% ------------------------------------------------------------
+\begin{frame}{The BPM Equation}
+\begin{itemize}
+    \item Solve paraxial equation as initial-value problem:
+    \[
+        \frac{\partial u}{\partial z} = i H(z) u
+    \]
+    \item \(H = D + V\), where \(D = \nabla_\perp^2 / (2k_0 n_0)\) and \(V = k_0(n^2 - n_0^2)/(2n_0)\).
+    % [CORRECTION] Note that H is Hermitian and exact evolution is unitary
+    \item \emph{Because $H$ is Hermitian, the exact evolution is unitary and conserves $\int |u|^2\,dx\,dy$, except for power leaving through the boundaries.}
+    \item \textbf{Split-step Fourier BPM:} symmetric Strang splitting.
+    \[
+        u(z+\Delta z) \approx e^{\,i \frac{\Delta z}{2} D}\, e^{\,i \Delta z\, V(z+\Delta z/2)}\, e^{\,i \frac{\Delta z}{2} D}\, u(z)
+    \]
+    \item Each step: two FFTs + pointwise multiplications.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Validity and Boundaries}
+% [CORRECTION] Add the paraxial validity nuance
+\begin{itemize}
+    \item \emph{The paraxial approximation requires small angles to $z$; guided light in a lantern travels at angles of order $\mathrm{NA}/n$, a few degrees, so the approximation is excellent for the guided field.}
+    \item \textbf{Absorbing layers:} Ramp of imaginary index near edges.
+    \item \textbf{Transparent boundary conditions:} Assume outgoing plane wave at boundary.
+    \item \textbf{Perfectly matched layers:} Complex coordinate stretching (most robust).
+    % [CORRECTION] Add the Cayley form caution
+    \item \emph{Finite-difference BPM uses the Cayley form, which is exactly unitary but maps large eigenvalues to phase $\approx -1$ rather than damping them: $\Delta z$ must remain small compared with the diffraction length of the finest grid features carrying power.}
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Extracting the Transfer Matrix and Checking Accuracy}
+\begin{enumerate}
+    \item Compute input modes \(\psi_n\) of MM section.
+    \item Compute output basis \(\phi_k\) of each SM core.
+    \item For each \(n\): launch \(\psi_n\), propagate, project: \(A_{kn} = \langle \phi_k | u(L) \rangle\).
+\end{enumerate}
+\begin{block}{Convergence checks}
+\begin{itemize}
+    \item Halve transverse grid spacing.
+    \item Halve step size \(\Delta z\).
+    \item Enlarge domain and check absorbed power.
+    \item Check unitarity \(A^\dagger A \approx 1\).
+    % [CORRECTION] Emphasise checking complex A, not just powers
+    \item \emph{Check convergence of the \textbf{complex} matrix \(A\), not just the powers: the sensor response depends on relative phases.}
+\end{itemize}
+\end{block}
+\end{frame}
+
+% ------------------------------------------------------------
+\section{Simulating a Lantern III: Coupled-Mode Theory}
+% ------------------------------------------------------------
+\begin{frame}{Derivation of Coupled-Mode Equations}
+Expand field on local eigenmodes \(\xi_n(x,y;z)\):
+\[
+    u(x,y,z) = \sum_{n=1}^{N} a_n(z) \xi_n(x,y;z)
+\]
+Substitute into paraxial equation and project:
+\[
+    \frac{d a_m}{d z} = i \lambda_m(z) a_m - \sum_n \kappa_{mn}(z) a_n
+\]
+\[
+    \kappa_{mn}(z) = \left\langle \xi_m \middle| \frac{\partial \xi_n}{\partial z} \right\rangle
+\]
+\begin{itemize}
+    \item \(\kappa\) is antisymmetric: \(\kappa_{mn} = -\kappa_{nm}\), diagonal vanishes.
+    \item Power \(\sum |a_n|^2\) is conserved within guided subspace.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Adiabatic Theorem and Hellmann-Feynman Formula}
+\begin{itemize}
+    \item Remove fast phases: \(a_m = c_m e^{i \Theta_m}\), \(\Theta_m(z) = \int_0^z \lambda_m dz'\).
+    \item Adiabatic condition: \(|\kappa_{mn}| \ll |\beta_n - \beta_m|\) \emph{everywhere along the taper}.
+    % [CORRECTION] Add the qualitative explanation of why adiabaticity works
+    \item \emph{The integrand oscillates with local wavenumber $\beta_n - \beta_m$; if $\kappa_{mn}$ varies slowly compared with this oscillation, successive contributions cancel.}
+    \item \textbf{Hellmann-Feynman form:}
+    \[
+        \kappa_{mn} = \frac{k_0^2 \langle \xi_m | \frac{\partial \varepsilon}{\partial z} | \xi_n \rangle}{\beta_n^2 - \beta_m^2}
+    \]
+    \item Needs only modes at one position and derivative of index distribution.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Numerical Procedure and Degeneracies}
+\begin{enumerate}
+    \item Mesh cross-section.
+    \item Solve eigenvalue problem for \(N\) guided modes (plus a few extra as check).
+    \item \textbf{Gauge fixing:} flip sign to make basis continuous; rotate degenerate pairs to align.
+    \item Evaluate \(\kappa\) (Hellmann-Feynman or finite differences).
+    \item Adaptive sampling; interpolate \(\beta(z), \kappa(z)\) with splines.
+    \item Integrate coupled equations (adaptive Runge-Kutta).
+    \item Project final supermodes onto SM core modes.
+\end{enumerate}
+% [CORRECTION] Clarify the Procrustes step
+\begin{itemize}
+    \item \textbf{Degeneracies:} Main numerical difficulty; use an orthogonal Procrustes step (SVD of the \(2\times2\) overlap matrix) to align pairs.
+    \item \textbf{SM end:} switch to a fixed basis of individual core modes (directional-coupler form).
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Limitations of CMT}
+% [CORRECTION] Add a dedicated slide on CMT limitations
+\begin{itemize}
+    \item CMT keeps only the guided modes.
+    \item It treats non-adiabatic exchange among guided modes exactly.
+    \item \emph{It neglects coupling into radiation and cladding modes, so it does not predict radiation loss.}
+    \item It is therefore most reliable for well-designed, nearly adiabatic lanterns.
+    \item \emph{Validate against BPM for at least one representative case per design family.}
+    \item Like BPM, it is scalar and paraxial.
+    \item Adding a few extra guided modes to the basis is a useful check on truncation.
+\end{itemize}
+\end{frame}
+
+% ------------------------------------------------------------
+\section{From Waveguide Model to AO Simulation}
+% ------------------------------------------------------------
+\begin{frame}{Wavelength Scaling}
+\begin{itemize}
+    \item Similarity property: scale all lengths by \(\sigma\), wavelength by \(\sigma\), keep indices fixed.
+    \[
+        A(\lambda, G) = A(\sigma \lambda, \sigma G)
+    \]
+    % [CORRECTION] Emphasise the transition length must be scaled too
+    \item \textbf{Important:} scale the \textbf{transition length} too, not just transverse dimensions.
+    \item \emph{Scaling only transverse dimensions gets the local modes right but not the accumulated phases $\int (\beta_n - \beta_m)\,dz$ that control output interference.}
+    \item Material dispersion breaks the symmetry; update indices at target wavelength.
+    \item For uniformly scaled tapers: scaling geometry is equivalent to shifting the range of scale factors.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{The Sensor as One Matrix}
+\begin{itemize}
+    \item Back-propagate LP modes to pupil: \(\Psi_n = \mathcal{F}^{-1}[\psi_n]\).
+    \item Projection: \(u_n = \langle \Psi_n | P e^{i\varphi} \rangle\).
+    \item Discretise pupil: \(\mathbf{u} = M \mathbf{f}\), where \(f_j = P(x_j) e^{i\varphi(x_j)}\).
+    \item Sensor output: \(\mathbf{p} = |A M \mathbf{f}|^2 = |C \mathbf{f}|^2\), with \(C = A M\).
+    \item \(C\) is computed once per wavelength.
+    \item One complex matrix-vector product per time step (cheap, GPU-friendly).
+    % [CORRECTION] Add the useful consistency check
+    \item \emph{A useful check: \(\sum_n |u_n|^2\) computed this way must equal the coupling efficiency from the direct route (FFT to focal plane, then overlap).}
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Inside an End-to-End AO Simulation}
+\begin{enumerate}
+    \item Atmospheric turbulence \(\to\) residual phase after first-stage AO.
+    \item Lantern sensor: \(C(\lambda)\) with photon noise, detector noise, background.
+    \item Reconstructor (linear or nonlinear).
+    \item Controller (integrator on second-stage commands).
+    \item Science metrics: coupling into single-mode outputs, Strehl, contrast.
+\end{enumerate}
+% [CORRECTION] Add the unguided light bookkeeping
+\begin{block}{Throughput budget}
+\emph{Light not captured by the \(N\) modes, \(1 - \sum |u_n|^2\), is lost both to the sensor and to any fibre-fed instrument behind it; it should be tracked.}
+\end{block}
+\end{frame}
+
+% ------------------------------------------------------------
+\section{Conclusions and Open Problems}
+% ------------------------------------------------------------
+\begin{frame}{Five Key Ideas}
+\begin{enumerate}
+    \item \textbf{A fibre is a potential well.} Guided modes are bound states, number set by \(V\).
+    \item \textbf{A lantern conserves the number of modes.} Adiabatic transition \(\Rightarrow\) unitary \(A\).
+    \item \textbf{Each output is an interferometer.} Fixed, non-trivial phases \(\Rightarrow\) linear response to relative modal phases.
+    \item \textbf{The price is low order and small range.} At most \(\sim N\) modes, linear range below a radian.
+    \item \textbf{Propagation is a Schrödinger problem.} Solve with BPM or CMT; sensor becomes a single precomputed matrix.
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{Open Problems}
+\begin{itemize}
+    \item More modes per photon: optimal combination of spectral and polarisation diversity.
+    \item Nonlinear reconstruction: robustness against drifts on sky.
+    \item Design for sensing: optimise core geometry and taper for conditioning of \(B\).
+    \item Stability: quantify and control temperature, stress, wavelength drifts.
+    \item Integration: lanterns as front end of photonic spectrographs and nullers.
+\end{itemize}
+\end{frame}
+
+% ------------------------------------------------------------
+\section*{Appendix: Symbols}
+% ------------------------------------------------------------
+\begin{frame}{Symbols and Conventions}
+% [CORRECTION] Fully regenerate the symbol table (the original was a rendering failure)
+\begin{table}
+\centering
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Symbol} & \textbf{Meaning} \\
+\midrule
+\(\lambda\), \(k_0 = 2\pi/\lambda\) & Vacuum wavelength and wavenumber \\
+\(n_1\), \(n_2\) & Core and cladding refractive indices \\
+\(V\) & Normalised frequency \\
+\(\beta\) & Propagation constant \\
+\(n_{\mathrm{eff}} = \beta/k_0\) & Effective index \\
+\(\psi_n\) & Guided mode profile of the MM section \\
+\(\phi_k\) & Fundamental mode of SM core \(k\) \\
+\(u_n\) & Modal amplitude at the lantern input \\
+\(v_k\) & Modal amplitude at the lantern output \\
+\(A_{kn}\) & Transfer matrix element \\
+\(B_{km}\) & Interaction matrix element \\
+\(\Psi_n\) & Back-propagated mode in the pupil \\
+\(C = AM\) & Precomputed sensor matrix \\
+\bottomrule
+\end{tabular}
+\end{table}
+\begin{itemize}
+    \item \emph{Time dependence \(\exp(-i\omega t)\); a wave travelling towards \(+z\) varies as \(\exp(+i\beta z)\).}
+    \item \emph{Inner products are \(\langle f | g \rangle = \int f^* g\,dx\,dy\) over the transverse plane (or pupil).}
+\end{itemize}
+\end{frame}
+
+\end{document}

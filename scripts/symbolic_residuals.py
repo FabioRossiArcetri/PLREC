@@ -1,5 +1,5 @@
 """Robustness of the analytical reconstructor to aberrations it does not model
-(symbolic.ipynb): 800 nm camera signals of random petal pistons (+-300 nm) plus
+(symbolic.ipynb): 800 nm camera signals of random petal pistons (+-lambda/2 = 400 nm) plus
 random low-order residuals (tip, tilt, focus, astigmatism: modes 5-9 of the
 modal basis) of a given total RMS, measured with the core centres of
 single_800nm_50k.npz so that they match the signals the forward model was
@@ -22,7 +22,8 @@ from ml_reconstruct.simulate import bp, dataset_centers, simulate_core_images   
 
 OUT = os.path.join(ROOT, "data", "ml", "symbolic")
 LEVELS_NM = (0.0, 5.0, 10.0, 25.0, 50.0, 100.0)
-N, SPAN_NM, SEED = 2000, 300.0, 21
+from ml_reconstruct.presets import settings as _settings     # noqa: E402
+N, SPAN_NM, SEED = 2000, _settings("pl19_800")["single_span_nm"], 21   # the single dataset's range
 
 
 def main():

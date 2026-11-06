@@ -111,12 +111,13 @@ def gauss_newton(model, S, P0, iters=12, bound_nm=None):
     return P, np.linalg.norm(S - model(P), axis=1)
 
 
-def invert(model, S, P_init, n_starts=64, span_nm=300.0, iters=12, tol=None, rng=0):
+def invert(model, S, P_init, n_starts=64, span_nm=None, iters=12, tol=None, rng=0):
     """Multi-start inversion: Gauss-Newton from P_init, then from random starts in
-    +-span_nm, keeping per sample the solution with the lowest residual. tol: a
+    +-span_nm (default +-lambda/2 of the model), keeping per sample the solution with the lowest residual. tol: a
     residual below which a sample is considered solved and not restarted (None:
     restart every sample). Returns (P, residual norm, starts used per sample)."""
     rng = np.random.default_rng(rng)
+    span_nm = model.wavelength_nm / 2 if span_nm is None else span_nm
     P, res = gauss_newton(model, S, P_init, iters, bound_nm=1.5 * span_nm)
     used = np.ones(len(S), int)
     for _ in range(n_starts):
@@ -215,14 +216,16 @@ def convergence_table(traces, thresholds_nm=(1.0, 0.01), iterations=(1, 2, 3, 5,
     return pd.DataFrame(rows)
 
 
-def solve_staged(model, S, P0, T, tol, n_first=5, n_cand=8, n_restart=8, max_restarts=500, span_nm=300.0, rng=0):
+def solve_staged(model, S, P0, T, tol, n_first=5, n_cand=8, n_restart=8, max_restarts=500, span_nm=None, rng=0):
     """The reconstructor as a procedure: n_first Gauss-Newton iterations from P0;
     for the cases whose residual is still above tol, n_cand iterations from the
     twin T p, the sign flip -p, -T p and the flat wavefront of the estimate; then
     random restarts (n_restart iterations each) for whatever is left. Returns
     (P, residual, total iterations per case, stage that solved each case:
-    0 first, 1 candidates, 2 random restarts, 3 not solved)."""
+    0 first, 1 candidates, 2 random restarts, 3 not solved). span_nm: range of the
+    random restarts (default +-lambda/2 of the model)."""
     g = np.random.default_rng(rng)
+    span_nm = model.wavelength_nm / 2 if span_nm is None else span_nm
     P, r = gauss_newton(model, S, P0, n_first, 1.5 * span_nm)
     iters, stage = np.full(len(S), n_first), np.where(r <= tol, 0, 3)
     bad = np.flatnonzero(r > tol)

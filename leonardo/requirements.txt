@@ -1,0 +1,26 @@
+# The lantern environment on Leonardo: the versions of the local plrec env
+# (Windows, Python 3.12) the results were validated with; jax with CUDA 12 for
+# the A100s. wavesolve and cbeam are installed editable by setup_env.sh.
+numpy==2.5.4
+numexpr==2.14.2
+cloudpickle==3.1.2
+scipy==1.18.1
+scikit-learn==1.9.1
+pandas==3.1.1
+matplotlib==3.11.2
+sympy==1.14.0
+astropy==8.0.2
+jax[cuda12]==0.12.0.1
+optax==0.2.8
+diffrax==0.7.2
+equinox==0.13.8
+juliacall==0.9.37
+juliapkg==0.1.28
+gmsh==4.15.2
+pygmsh==7.1.17
+meshio==5.3.5
+ipykernel==7.4.0
+jupyter_client==8.10.0
+nbconvert==7.17.2
+nbformat==5.11.1
+pytest==9.2.0

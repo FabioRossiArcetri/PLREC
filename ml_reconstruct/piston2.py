@@ -294,10 +294,11 @@ def plot_folds(lines):
     panel per measurement (camera, channel powers per wavelength)."""
     fig, ax = plt.subplots(1, len(lines), figsize=(4.2 * len(lines), 3.6), sharey=True, squeeze=False)
     for a, (label, d) in zip(ax[0], lines.items()):
+        top = np.abs(d["coeff"]).max()                     # largest piston at |t| = 1
         for i, (kind, (t, A)) in enumerate(fold_asymmetry(d).items()):
             q = np.percentile(A, [25, 50, 75], axis=0)
-            a.fill_between(300 * t, q[0], q[2], color=plt.cm.tab10(i), alpha=0.2)
-            a.plot(300 * t, q[1], "o-", ms=3, color=plt.cm.tab10(i), label=kind)
+            a.fill_between(top * t, q[0], q[2], color=plt.cm.tab10(i), alpha=0.2)
+            a.plot(top * t, q[1], "o-", ms=3, color=plt.cm.tab10(i), label=kind)
         a.set_yscale("log"); a.grid(alpha=0.3, which="both"); a.set_title(label, fontsize=10)
         a.set_xlabel("largest piston along the line (nm)")
     ax[0, 0].set_ylabel("|s(tv) - s(-tv)| / |s(tv) - s(0)|"); ax[0, -1].legend(fontsize=8)
@@ -312,7 +313,7 @@ def plot_line_signals(d, kinds=("point-symmetric", "twin-invariant"), line=0):
         m = (d["kind"] == kind) & (d["line"] == line)
         o = np.argsort(d["t"][m]); t, S = d["t"][m][o], d["signals"][m][o]
         for c in range(S.shape[1]):
-            a.plot(300 * t, S[:, c], lw=1, color=plt.cm.turbo(c / (S.shape[1] - 1)))
+            a.plot(np.abs(d["coeff"]).max() * t, S[:, c], lw=1, color=plt.cm.turbo(c / (S.shape[1] - 1)))
         a.set_title(f"{kind} line {line}: the {S.shape[1]} core signals", fontsize=10)
         a.set_xlabel("largest piston along the line (nm)"); a.grid(alpha=0.3)
     ax[0, 0].set_ylabel("signal"); plt.tight_layout(); plt.show()

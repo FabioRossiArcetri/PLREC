@@ -2,9 +2,9 @@
 
 Two approaches, in these scenarios (inputs -> 5 petal pistons):
 
-    800nm    one wavelength, +-300 nm (single_800nm.npz): inside the capture range
-    1wl-800  one wavelength of the spectral dataset (800 nm), +-5 um: far outside it
-    20nm     the spectral dataset at 20 nm steps (11 wavelengths), +-5 um
+    800nm    one wavelength, +-lambda/2 = 400 nm (single_800nm.npz): the single-wavelength capture range
+    1wl-800  one wavelength of the spectral dataset (800 nm), +-8 lambda (6.4 um): far outside it
+    20nm     the spectral dataset at 20 nm steps (11 wavelengths), +-8 lambda (6.4 um)
     10nm     10 nm steps (21 wavelengths)
     5nm      5 nm steps (all 41 wavelengths)
 
@@ -69,7 +69,8 @@ OUT = os.path.join(ROOT, "data", "ml", "mlp_hpo")
 DATASETS = {"single": os.path.join(ROOT, "data", "ml", "single_800nm.npz"),
             "spectral": os.path.join(ROOT, "data", "ml", "spectral_41wl.npz"),
             "single50k": os.path.join(ROOT, "data", "ml", "single_800nm_50k.npz")}
-SPAN_NM = 5000.0                 # piston range of the spectral dataset
+from ml_reconstruct.presets import settings as _settings     # noqa: E402
+SPAN_NM = _settings("pl19_800")["spectral_span_nm"]   # piston range of the spectral dataset (+-8 lambda)
 ES_SHARE = 0.1                   # share of the training split held out for model selection
 BALANCE_TOL = 1.10               # "balanced": fewest parameters within 10% of the best RMSE
 DEPTHS, WIDTHS = (2, 3, 4), (32, 64, 128, 256)

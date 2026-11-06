@@ -18,7 +18,7 @@ wavelength in data/ml/piston2/ (restartable: existing files are skipped).
 twin is their sign flip, T p = -p, inside the training range.
 
 --family lines simulates instead the signals along lines t v through the flat
-wavefront (t in +-1, the largest piston 300 nm at t = 1), for N_LINES
+wavefront (t in +-1, the largest piston +-lambda/2 = 400 nm at t = 1), for N_LINES
 directions v of each kind: point-symmetric (T v = -v), twin-invariant
 (T v = v) and random; at the 800 nm camera and at LINE_WAVELENGTHS_NM. A
 fold s(t v) = s(-t v) makes the sign of t invisible.
@@ -42,11 +42,15 @@ import numpy as np
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 sys.path.insert(0, ROOT)
 from ml_reconstruct import petals                                          # noqa: E402
+from ml_reconstruct.presets import settings                              # noqa: E402
 from ml_reconstruct.simulate import bp, simulate_core_images, simulate_spectra   # noqa: E402
 
 OUT = os.path.join(ROOT, "data", "ml", "piston2")
-N_BASE, SPAN_NM, SEED = 400, 150.0, 11
-N_EVEN, EVEN_SPAN_NM = 200, 300.0
+# the single dataset's range +-lambda/2 (400 nm): bases in half of it, so that
+# their twins stay inside it; even configurations and lines span all of it
+RANGE_NM = settings("pl19_800")["single_span_nm"]
+N_BASE, SPAN_NM, SEED = 400, RANGE_NM / 2, 11
+N_EVEN, EVEN_SPAN_NM = 200, RANGE_NM
 N_LINES, N_T, LINE_WAVELENGTHS_NM = 20, 25, (700.0, 800.0, 900.0)
 EXAMPLES = {"typical": 45938, "critical": 43822}      # rows of single_800nm_50k.npz
 N_CALIB = 2000
@@ -82,7 +86,7 @@ def line_configurations(T):
     C, labels = [], []
     for kind, vs in V.items():
         for j, v in enumerate(vs):
-            v = v / np.abs(v).max() * SPAN_NM * 2                         # largest piston 300 nm at t = 1
+            v = v / np.abs(v).max() * SPAN_NM * 2                         # largest piston RANGE_NM at t = 1
             C.append(t[:, None] * v[None, :])
             labels += [(kind, j, tt) for tt in t]
     return np.concatenate(C), labels

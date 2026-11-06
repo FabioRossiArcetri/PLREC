@@ -1,0 +1,7 @@
+# Only for the pl19_800 symbolic-regression study (extras.slurm, STAGE=cpu), in
+# the separate env-sr (setup_env.sh --extras): PySR 2.7.2 needs juliacall 0.9.36,
+# whose PythonCall is incompatible with the main environment's (0.9.37, as locally),
+# so it gets its own conda clone and Julia project. cbeam is not used there.
+pysr==2.7.2
+juliacall==0.9.36
+pyoperon==0.6.2

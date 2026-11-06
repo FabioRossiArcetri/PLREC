@@ -189,7 +189,8 @@ def predict_phasor_poly(model, F):
 
 
 def phasor_poly_dof(model):
-    """Fitted constants: non-zero coefficients and intercepts of both targets."""
+    """Fitted constants per piston: non-zero coefficients and intercepts of both
+    (sin, cos) targets of one piston."""
     return int(sum(np.count_nonzero(m.coef_) + 1 for m in model[2]))
 
 
@@ -227,7 +228,8 @@ def range_scan(model, spans_nm, Ks=(10, 30), n_fit=20000, n_va=5000, rng=3):
     """Explicit reconstructors vs. capture range, on noise-free signals of the
     exact forward model: linear (ridge, all 19 signals) and sparse quadratic
     (OMP, K terms per piston), each fitted to the piston directly. Returns the
-    validation RMSE [nm] (mean over the pistons) and the degrees of freedom."""
+    validation RMSE [nm] (mean over the pistons) and the degrees of freedom
+    per piston."""
     import pandas as pd
     from sklearn.linear_model import OrthogonalMatchingPursuit, RidgeCV
     from sklearn.preprocessing import PolynomialFeatures, StandardScaler
@@ -236,14 +238,16 @@ def range_scan(model, spans_nm, Ks=(10, 30), n_fit=20000, n_va=5000, rng=3):
     for R in spans_nm:
         Ptr, Pva = g.uniform(-R, R, (n_fit, 5)), g.uniform(-R, R, (n_va, 5))
         xs = StandardScaler().fit(model(Ptr)); Xtr, Xva = xs.transform(model(Ptr)), xs.transform(model(Pva))
-        lin = RidgeCV(alphas=np.logspace(-10, 0, 11)).fit(Xtr, Ptr).predict(Xva)
-        row = {"range_nm": R, "linear (100 dof)": np.sqrt(np.mean((lin - Pva) ** 2))}
+        lin_model = RidgeCV(alphas=np.logspace(-10, 0, 11)).fit(Xtr, Ptr)
+        lin = lin_model.predict(Xva)
+        n_lin = int(np.shape(lin_model.coef_)[-1] + 1)        # per piston
+        row = {"range_nm": R, f"linear ({n_lin} dof/piston)": np.sqrt(np.mean((lin - Pva) ** 2))}
         pf = PolynomialFeatures(2, include_bias=False); sq = StandardScaler().fit(pf.fit_transform(Xtr))
         Qtr, Qva = sq.transform(pf.transform(Xtr)), sq.transform(pf.transform(Xva))
         for K in Ks:
             pr = np.stack([OrthogonalMatchingPursuit(n_nonzero_coefs=K).fit(Qtr, Ptr[:, k]).predict(Qva)
                            for k in range(5)], 1)
-            row[f"quadratic K={K} ({5 * (K + 1)} dof)"] = np.sqrt(np.mean((pr - Pva) ** 2))
+            row[f"quadratic K={K} ({K + 1} dof/piston)"] = np.sqrt(np.mean((pr - Pva) ** 2))
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -257,7 +261,7 @@ def workbench_zern_omp(S_train, C_train, core_xy, S_eval, cache_dir="data/ml/cac
     K terms per piston on the degree-3 monomials of the standardised Zernike
     projection of the core signals, loaded from its cache. S_train, C_train:
     the rows it was trained on (the 8000 training rows of the 10k dataset), to
-    rebuild its scalers exactly. Returns (estimates, constants)."""
+    rebuild its scalers exactly. Returns (estimates, constants per piston)."""
     from . import ModelCache, Standardizer, modal_projector, poly_features, zernike_basis, omp_predict
     proj = modal_projector(zernike_basis(core_xy, n_zern, fill=0.8)[0])
     zs = Standardizer(eps=1e-9).fit(S_train @ proj.T)
@@ -266,7 +270,32 @@ def workbench_zern_omp(S_train, C_train, core_xy, S_eval, cache_dir="data/ml/cac
     fits = ModelCache(cache_dir, verbose=False)(f"zern-omp-K{K}", None)
     ys = Standardizer().fit(C_train)
     pred = ys.inverse(np.stack([omp_predict(Zd3_ev, f) for f in fits], axis=1))
-    return pred, int(sum(np.count_nonzero(f[0].coef_) + 1 for f in fits))
+    constants = int(round(np.mean([np.count_nonzero(f[0].coef_) + 1 for f in fits])))
+    return pred, constants          # constants PER PISTON
+
+
+def workbench_fiber_omp(S_train, C_train, S_eval, cache_dir="data/ml/cache_single", K=1282):
+    """Estimates [nm] on S_eval of workbench.ipynb's best cubic model: OMP with
+    K terms per piston on the degree-3 monomials of the standardised core
+    signals, loaded from its cache. S_train, C_train: the rows it was trained on
+    (the 8000 training rows of the 10k dataset), to rebuild its scalers exactly.
+    Returns (estimates, constants per piston).
+
+    The Zernike variant kept above (``workbench_zern_omp``) is retired from the
+    notebooks; its cached fits are still on disk.
+
+    K = 1282 is the saturated OMP budget on this basis (1281 non-zero monomials
+    plus the intercept per piston): every larger budget, up to the full cubic
+    basis, gives the identical fit."""
+    from . import ModelCache, Standardizer, poly_features, omp_predict
+    xs = Standardizer().fit(S_train)
+    X_tr, X_ev = xs.transform(S_train), xs.transform(S_eval)
+    _, X3_ev, _, _ = poly_features(X_tr, X_ev, 3)
+    fits = ModelCache(cache_dir, verbose=False)(f"fiber-omp-K{K}", None)
+    ys = Standardizer().fit(C_train)
+    pred = ys.inverse(np.stack([omp_predict(X3_ev, f) for f in fits], axis=1))
+    constants = int(round(np.mean([np.count_nonzero(f[0].coef_) + 1 for f in fits])))
+    return pred, constants          # constants PER PISTON
 
 
 def sr_front_template(r, wavelength_nm):

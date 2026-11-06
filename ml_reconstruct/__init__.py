@@ -1,5 +1,5 @@
 """ml_reconstruct -- wavefront (DM-mode) reconstruction from photonic-lantern
-signals, used by the trainMLP*.ipynb / PL19_EML.ipynb notebooks.
+signals, used by the trainMLP*.ipynb / PL7_EML.ipynb notebooks.
 
     data      LanternDataset (signals + coefficients + core positions), Standardizer
     simulate  dataset generation with batch_pipeline / multi_wvl

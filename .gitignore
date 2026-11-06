@@ -1,3 +1,17 @@
 __pycache__/
 .ipynb_checkpoints/
 data/
+
+# executed-notebook logs and the figure pickles for the slides (regenerated)
+runs/*/*.log
+runs/*/figs/
+Presentation/Slides/figures/pkl/
+# LaTeX build files
+*.aux
+*.log
+*.nav
+*.out
+*.snm
+*.toc
+*.vrb
+*.synctex.gz

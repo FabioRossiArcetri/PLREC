@@ -111,17 +111,18 @@ def dataset_centers(ds) -> np.ndarray:
 
 
 def simulate_spectra(base_params, ifunc, coeff, n_train, wavelengths_nm,
-                     **pipeline_kwargs) -> LanternDataset:
+                     prop_chunk_size=None, **pipeline_kwargs) -> LanternDataset:
     """Spectral dataset: ``coeff`` (n, n_modes) [nm] -> per-channel coupled
     power fractions (n, n_wl, n_cores), one lantern characterization per
     wavelength (MultiWavelengthPropagationPipeline; ``pipeline_kwargs`` are
-    passed to it, e.g. verbose=False)."""
+    passed to it, e.g. verbose=False). prop_chunk_size: propagate this many
+    fields at a time (None: all at once), to bound the memory."""
     import multi_wvl as mw
 
     mwp = mw.MultiWavelengthPropagationPipeline(
         base_params, ifunc, wavelengths_nm, **pipeline_kwargs)
     with contextlib.chdir(CBEAM_EXAMPLES):         # its data/ holds the caches
-        power, wl = mwp.get_power_spectra(coeff)                    # (n_wl, n, n_cores)
+        power, wl = mwp.get_power_spectra(coeff, prop_chunk_size=prop_chunk_size)  # (n_wl, n, n_cores)
     return LanternDataset(
         signals=np.ascontiguousarray(power.transpose(1, 0, 2)),
         coeff=np.asarray(coeff, float), n_train=int(n_train),
@@ -129,22 +130,23 @@ def simulate_spectra(base_params, ifunc, coeff, n_train, wavelengths_nm,
         meta={"measurement": "channel power / incident power, per wavelength"})
 
 
-def make_single_dataset(n, n_train, span_nm, n_modes=5, rng=0, **kwargs) -> LanternDataset:
+def make_single_dataset(n, n_train, span_nm, n_modes=5, rng=0, lantern=None, **kwargs) -> LanternDataset:
     """The single-wavelength dataset of the notebooks: ``n`` random
     configurations of DM modes 0..n_modes-1, uniform in +-span_nm (seeded by
-    ``rng``), imaged at 800 nm (simulate_core_images)."""
-    p = bp.get_simulation_parameters(3, 0.8)
+    ``rng``), imaged at the lantern's design wavelength (simulate_core_images).
+    lantern: a batch_pipeline.LANTERNS name (default: CBEAM_LANTERN / pl19_800)."""
+    p = bp.get_simulation_parameters(lantern=lantern)
     ifunc = bp.load_ifunc(p["ifunc_file"]); bp.center_ifunc_mask(ifunc)
     coeff, _ = bp.create_random_aberration_configs(n, n_modes, -span_nm, span_nm, rng=rng)
     return simulate_core_images(p, ifunc, coeff, n_train, **kwargs)
 
 
-def make_spectral_dataset(n, n_train, span_nm, wavelengths_nm, n_modes=5, rng=0,
+def make_spectral_dataset(n, n_train, span_nm, wavelengths_nm, n_modes=5, rng=0, lantern=None,
                           **pipeline_kwargs) -> LanternDataset:
     """The spectral dataset of the notebooks: like make_single_dataset, but the
     channel powers at every wavelength (simulate_spectra; hours for 50000
     samples x 41 wavelengths -- see data/gen/ for a chunked, parallel run)."""
-    base = bp.get_simulation_parameters(nrings=3)
+    base = bp.get_simulation_parameters(lantern=lantern)
     ifunc = bp.load_ifunc(base["ifunc_file"]); bp.center_ifunc_mask(ifunc)
     coeff, _ = bp.create_random_aberration_configs(n, n_modes, -span_nm, span_nm, rng=rng)
     pipeline_kwargs.setdefault("verbose", False)
@@ -152,7 +154,7 @@ def make_spectral_dataset(n, n_train, span_nm, wavelengths_nm, n_modes=5, rng=0,
 
 
 def ramp_spectra(results_file, mode, n_steps, span_nm, wavelengths_nm, rerun=False,
-                 prop_chunk_size=32):
+                 prop_chunk_size=32, lantern=None):
     """Channel power spectra of a ramp of one DM mode, n_steps amplitudes from
     -span_nm to +span_nm, at every wavelength (multi_wvl's
     MultiWavelengthPropagationPipeline), cached in ``results_file``.
@@ -165,7 +167,7 @@ def ramp_spectra(results_file, mode, n_steps, span_nm, wavelengths_nm, rerun=Fal
             print(f"loaded {results_file}")
             return f["power_spectra"], f["wavelengths"], coeff, labels
     import multi_wvl as mw
-    base = bp.get_simulation_parameters(nrings=3)
+    base = bp.get_simulation_parameters(lantern=lantern)
     ifunc = bp.load_ifunc(base["ifunc_file"]); bp.center_ifunc_mask(ifunc)
     mwp = mw.MultiWavelengthPropagationPipeline(base, ifunc, wavelengths_nm, verbose=False)
     with contextlib.chdir(CBEAM_EXAMPLES):         # its data/ holds the characterizations

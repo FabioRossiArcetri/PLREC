@@ -15,6 +15,7 @@ from .data import LanternDataset, rmse_nm
 from .mlp import load_mlp, save_mlp, train_mlp
 from .sparse import omp_fit, omp_predict
 from .unwrap import phasor_targets
+from .presets import settings
 
 
 # --------------------------------------------------------------------------- #
@@ -158,47 +159,57 @@ def score(results, name, C_pred, C_true, ys=None, note=""):
 
 
 def n_dof(model):
-    """Degrees of freedom of a fitted model: its fitted parameters (non-zero
-    coefficients and intercepts; weights and biases of an MLP). For k-NN, which
-    fits nothing but keeps the training set, the number of stored values."""
+    """Fitted degrees of freedom **per piston**: every model here is fitted
+    independently for each piston, so this counts one piston's parameters and
+    never their sum over the five pistons -- the non-zero coefficients and the
+    intercept of a linear or OMP fit, an MLP's parameters divided by its number
+    of outputs (the hidden layers are shared by all pistons), and for k-NN the
+    stored training values of one piston."""
     from sklearn.linear_model import RidgeCV
     from sklearn.neighbors import KNeighborsRegressor
     if isinstance(model, KNeighborsRegressor):
-        return int(model.n_samples_fit_ * (model.n_features_in_ + np.atleast_2d(model._y.T).shape[0]))
+        # one piston keeps the training inputs plus its own target
+        return int(model.n_samples_fit_ * (model.n_features_in_ + 1))
     if isinstance(model, dict):                                   # MLP parameters
-        return int(sum(np.size(a) for v in model.values() for a in v))
+        total = int(sum(np.size(a) for v in model.values() for a in v))
+        biases = model.get("biases")
+        n_out = int(np.size(biases[-1])) if biases else 1
+        return total / max(n_out, 1)
     if isinstance(model, tuple) and len(model) == 3:              # (poly, scaler, ridge or OMP fits)
         return n_dof(model[2])
     if isinstance(model, RidgeCV):
-        return int(np.size(model.coef_) + np.size(model.intercept_))
-    if isinstance(model, tuple) and len(model) == 2:              # one (omp, sel) fit
+        return int(np.shape(model.coef_)[-1] + 1)                 # one row of coef_ is one piston
+    if isinstance(model, tuple) and len(model) == 2:              # one (omp, sel) fit: already per piston
         return int(np.count_nonzero(model[0].coef_)) + 1
-    if isinstance(model, list):                                   # one model per target
-        return sum(n_dof(m) for m in model)
-    if hasattr(model, "coef_"):                                   # e.g. ElasticNetCV
-        return int(np.count_nonzero(model.coef_)) + 1
+    if isinstance(model, list):                                   # one model per piston
+        return float(np.mean([n_dof(m) for m in model]))
+    if hasattr(model, "coef_"):                                   # e.g. ElasticNetCV (multi-output)
+        c = np.asarray(model.coef_)
+        rows = c.reshape(-1, c.shape[-1]) if c.ndim > 1 else c.reshape(1, -1)
+        return float(np.mean([np.count_nonzero(r) for r in rows]) + 1)
     raise TypeError(f"no degree-of-freedom count for {type(model).__name__}")
 
 
-def show_results(results, title, ref=None, logy=True, sort=False, dof=None):
+def show_results(results, title, ref=None, logy=True, sort=False, dof=None, exclude=()):
     """Table and grouped bar chart of a results dict {name: per-piston RMSE};
     ref: the name whose mean is drawn as a dashed line; sort: order the models
-    by decreasing mean RMSE; dof: {name: degrees of freedom}, shown in the
-    table and the legend, and against the mean RMSE in a second plot."""
+    by decreasing mean RMSE; dof: {name: degrees of freedom PER PISTON},
+    shown in the table and the legend, and against the mean RMSE in a second plot;
+    exclude: models kept in the table but left out of the plots."""
     if sort:
         results = dict(sorted(results.items(), key=lambda kv: -kv[1].mean()))
     dof = dof or {}
-    lab = {m: f"{m} ({dof[m]:,} dof)" if m in dof else m for m in results}
+    lab = {m: f"{m} ({dof[m]:,.0f} dof/piston)" if m in dof else m for m in results}
     for m, r in results.items():
         print(f"  {m:22s} {r.mean():8.2f} nm   per piston {np.round(r, 2)}"
-              + (f"   {dof[m]:>9,} dof" if m in dof else ""))
-    names = list(results)
+              + (f"   {dof[m]:>9,.0f} dof/piston" if m in dof else ""))
+    names = [m for m in results if m not in exclude]
     n_modes = len(next(iter(results.values())))
     x, w = np.arange(n_modes), 0.8 / len(names)
     plt.figure(figsize=(12, 4.8))
     for i, m in enumerate(names):
         plt.bar(x + (i - len(names) / 2 + 0.5) * w, results[m], w, label=lab[m])
-    if ref is not None:
+    if ref is not None and ref not in exclude:
         plt.axhline(results[ref].mean(), color="k", ls="--", lw=1)
     if logy:
         plt.yscale("log")
@@ -215,8 +226,8 @@ def show_results(results, title, ref=None, logy=True, sort=False, dof=None):
         plt.xscale("log")
         if logy:
             plt.yscale("log")
-        plt.xlabel("degrees of freedom"); plt.ylabel("mean validation RMSE (nm)")
-        plt.title("accuracy vs. degrees of freedom"); plt.grid(alpha=0.3, which="both")
+        plt.xlabel("degrees of freedom per piston"); plt.ylabel("mean validation RMSE (nm)")
+        plt.title("accuracy vs. degrees of freedom per piston"); plt.grid(alpha=0.3, which="both")
         plt.tight_layout(); plt.show()
 
 
@@ -421,7 +432,7 @@ def plot_data800(table, ref=None):
         plt.annotate(lab, (n, r), fontsize=7, xytext=(4, 4), textcoords="offset points")
     plt.xscale("log"); plt.yscale("log"); plt.grid(alpha=0.3, which="both")
     plt.xlabel("training samples"); plt.ylabel("validation RMSE (nm)")
-    plt.title("800 nm, +-300 nm: more data vs. bigger models"); plt.legend(fontsize=8)
+    plt.title(f"800 nm, +-{settings('pl19_800')['single_span_nm']:g} nm: more data vs. bigger models"); plt.legend(fontsize=8)
     plt.tight_layout(); plt.show()
 
 
@@ -517,12 +528,13 @@ def plot_omp_sweep(sweep, title):
     plt.title(title); plt.grid(alpha=0.3); plt.tight_layout(); plt.show()
 
 
-def plot_degree_mix(Ks, mix):
+def plot_degree_mix(Ks, mix, title="degree mix of the kept terms",
+                    xlabel="K (terms per piston)"):
     """Stacked share of the kept terms per degree (mix: (n_degrees, len(Ks)))."""
     plt.figure(figsize=(6, 4))
     plt.stackplot(Ks, *mix, labels=[f"degree {d + 1}" for d in range(len(mix))], alpha=0.85)
-    plt.xlabel("K (terms per piston)"); plt.ylabel("share of kept terms")
-    plt.title("degree mix of the kept terms"); plt.legend(loc="upper left", fontsize=8)
+    plt.xlabel(xlabel); plt.ylabel("share of kept terms")
+    plt.title(title); plt.legend(loc="upper left", fontsize=8)
     plt.tight_layout(); plt.show()
 
 
