@@ -37,7 +37,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PLREC = os.path.abspath(os.path.join(HERE, os.pardir, os.pardir))
 PKL = os.path.join(HERE, "figures", "pkl")
 OUT = os.path.join(HERE, "figures", "slides")
-FONT_PT = 8.0
+FONT_PT = 5.6
 CM = 1 / 2.54
 FALLBACK = False
 # for figures drawn directly at slide size (make_figures.py, make_ambiguity_figure.py)
@@ -82,19 +82,30 @@ SLOTS = dict([
     # part 2: single wavelength
     _nb("pl19_800", "omp_sweep", "trainMLP", 14, 0, 7.8, 5.4, title=False),
     _nb("pl19_800", "mlp_training", "trainMLP", 5, 0, W_WIDE, 4.2),
-    _nb("pl19_800", "single_comparison", "workbench", 28, 0, 9.0, 4.6, title=False, legend="below", ncol=3),
+    _nb("pl19_1200", "omp_sweep", "trainMLP", 14, 0, 7.8, 5.4, title=False),
+    _nb("pl19_1200", "mlp_training", "trainMLP", 5, 0, W_WIDE, 4.2),
+    _nb("pl19_800", "single_comparison", "workbench", 32, 0, 9.0, 4.6, title=False, legend="below", ncol=3),
     _nb("pl19_800", "forward_model_noise", "symbolic", 36, 0, W_HALF, 4.6),
     # part 3: dispersed lantern
     _sim("pl19_800", "pupil_petals", 5.6, 5.0),
-    _nb("pl19_800", "sample_spectra", "workbench", 36, 0, W_HALF, 4.4, title=False),
+    _nb("pl19_800", "sample_spectra", "workbench", 40, 0, W_HALF, 4.4, title=False),
     _nb("pl19_800", "core0_ramp", "multi_wavelength", 10, 0, 7.8, 5.2, title=False),
     # part 4: comparison
     _nb("pl19_800", "wrapped_rmse", "PL_EML", 5, 0, 10.0, 4.6, title=False, legend="right", ylabel="wrapped RMSE (nm)"),
     _nb("pl19_800", "unwrap_scatter", "PL_EML", 7, 0, 14.0, 3.9, **SCATTER),
-    _nb("pl19_800", "spectral_comparison", "workbench", 53, 0, 9.0, 4.6, title=False, legend="below", ncol=3),
-    *[_nb(L, "single_comparison", "workbench", 28, 0, W_HALF, 4.6, title=False, legend="below", ncol=2)
+    _nb("pl19_800", "spectral_comparison", "workbench", 57, 0, 9.0, 4.6, title=False, legend="below", ncol=3),
+    *[_nb(L, "single_comparison", "workbench", 32, 0, W_HALF, 4.6, title=False, legend="below", ncol=2)
       for L in ("pl7_1200", "pl19_1200")],
-    *[_nb(L, "spectral_comparison", "workbench", 53, 0, W_HALF, 4.6, title=False, legend="below", ncol=2)
+    # single wavelength with a wavefront error besides the pistons (f^-2, models trained at each level)
+    *[_nb(L, "wfe", "trainMLP", 23, 0, 7.6, 5.6, title=False, legend="below", ncol=2) for L in ("pl7_1200", "pl19_1200")],
+    # the same comparison with the errors taken modulo lambda (third figure of the cell)
+    _nb("pl19_1200", "sr_fronts", "workbench", 25, 0, W_WIDE, 5.0, title=False, legend="below", ncol=2),
+    # the final comparisons: per-piston bars sorted by decreasing error, and mean error vs dof
+    *[_nb(L, "single_dof", "workbench", 32, 3, W_HALF, 4.6, title=False) for L in ("pl7_1200", "pl19_1200")],
+    *[_nb(L, "spectral_dof", "workbench", 57, 1, W_HALF, 4.6, title=False) for L in ("pl7_1200", "pl19_1200")],
+    *[_nb(L, "single_comparison_mod", "workbench", 32, 2, W_HALF, 4.6, title=False, legend="below", ncol=2)
+      for L in ("pl7_1200", "pl19_1200")],
+    *[_nb(L, "spectral_comparison", "workbench", 57, 0, W_HALF, 4.6, title=False, legend="below", ncol=2)
       for L in ("pl7_1200", "pl19_1200")],
     *[_nb(L, "wrapped_rmse", "PL_EML", 5, 0, 10.0, 4.6, title=False, legend="right", ylabel="wrapped RMSE (nm)") for L in ("pl7_1200", "pl19_1200")],
     *[_nb(L, "unwrap_scatter", "PL_EML", 7, 0, 14.0, 3.9, **SCATTER) for L in ("pl7_1200", "pl19_1200")],
@@ -103,14 +114,14 @@ SLOTS = dict([
     # appendix
     _nb("pl19_800", "psf_zoo_piston", "psf_zoo", 6, 0, 6.0, 6.5),
     _nb("pl19_800", "psf_zoo_twins", "psf_zoo", 9, 0, 7.0, 6.5),
-    _nb("pl19_800", "omp_degree_mix", "workbench", 24, 0, 9.0, 5.8, title=False),
+    _nb("pl19_800", "omp_degree_mix", "workbench", 28, 0, 9.0, 5.8, title=False),
     _nb("pl19_800", "more_data", "mlp_hpo", 18, 0, 11.0, 6.0),
-    _nb("pl19_800", "phasor_r2", "workbench", 37, 0, 11.0, 5.0, title=False, legend="right"),
+    _nb("pl19_800", "phasor_r2", "workbench", 41, 0, 11.0, 5.0, title=False, legend="right"),
     *[_sim(L, f, W_HALF, 4.4) for L in ("pl7_1200", "pl19_1200") for f in ("geometry", "neff_vs_z")],
     *[_sim(L, "psf_coupling", W_HALF, 5.6) for L in ("pl7_1200", "pl19_1200")],
     *[_sim(L, "output_face", 14.0, 4.4) for L in ("pl7_1200", "pl19_1200")],
     *[_nb(L, "core0_ramp", "multi_wavelength", 10, 0, 6.8, 4.6, title=False) for L in ("pl7_1200", "pl19_1200")],
-    *[_nb(L, "sample_spectra", "workbench", 36, 0, 6.2, 2.4, title=False, ylabel="power") for L in ("pl7_1200", "pl19_1200")],
+    *[_nb(L, "sample_spectra", "workbench", 40, 0, 6.2, 2.4, title=False, ylabel="power") for L in ("pl7_1200", "pl19_1200")],
     *[_nb(L, "coupling_vs_wl", "multi_wavelength", 12, 0, 6.2, 2.4, title=False, ylabel="coupling") for L in ("pl7_1200", "pl19_1200")],
 ])
 
@@ -159,6 +170,33 @@ def restyle(fig, w_cm, h_cm, legend=None, ncol=None, title=True, suptitle=False,
     s = min(1.0, max(0.35, w_cm * CM / fig.get_size_inches()[0]))
     fig.set_size_inches(w_cm * CM, h_cm * CM)
     fig.set_dpi(300)
+    # the deck does not show the no-skill / chance reference: drop it everywhere
+    _DROP = ("no skill", "no-skill", "noskill", "chance", "no model")
+    for ax in fig.axes:
+        for art in (list(getattr(ax, "lines", [])) + list(getattr(ax, "collections", []))
+                    + list(getattr(ax, "patches", [])) + list(getattr(ax, "texts", []))):
+            try:
+                lab = (art.get_label() or "").lower()
+            except Exception:
+                lab = ""
+            try:
+                txt = (art.get_text() or "").lower()
+            except Exception:
+                txt = ""
+            if any(k in lab or k in txt for k in _DROP):
+                try:
+                    art.remove()
+                except Exception:
+                    pass
+        # bar charts: the label sits on the BarContainer, not on its rectangles
+        for cont in list(getattr(ax, "containers", [])):
+            if any(k in (cont.get_label() or "").lower() for k in _DROP):
+                for p in list(cont):
+                    try:
+                        p.remove()
+                    except Exception:
+                        pass
+                ax.containers.remove(cont)
     for ln in fig.findobj(Line2D):
         ln.set_linewidth(max(0.5, ln.get_linewidth() * s))
         ln.set_markersize(max(2.0, ln.get_markersize() * s))
@@ -226,11 +264,16 @@ def restyle(fig, w_cm, h_cm, legend=None, ncol=None, title=True, suptitle=False,
             labels = [re.sub(r"\s*\([^()]*dof/piston\)", "", s) for s in labels]
         for pat, repl in relabel:
             labels = [re.sub(pat, repl, s) for s in labels]
-        if legend is None:
+        keep = [i for i, s_ in enumerate(labels) if not any(k in s_.lower() for k in _DROP)]
+        if legend is None and len(keep) == len(labels):
             for t, s_ in zip(lg.get_texts(), labels):
                 t.set_text(s_)
             continue
+        handles, labels = [handles[i] for i in keep], [labels[i] for i in keep]
         lg.remove()
+        if legend is None:                            # entries dropped: rebuild in place
+            ax.legend(handles, labels, fontsize=font)
+            continue
         kw = dict(fontsize=font, frameon=False, handlelength=1.2, columnspacing=1.0, handletextpad=0.4)
         if legend == "below":
             fig.legend(handles, labels, loc="outside lower center", ncol=ncol or len(labels), **kw)
@@ -301,6 +344,41 @@ def render(name, quiet=False):
     plt.close(fig)
     print(f"  ok {name}  ({w:g} x {h:g} cm)")
     return True
+
+
+def lp_name(props, n, radius):
+    """LP_lm name (TeX) of mode n of a guide's cross-section, read from the field itself.
+
+    props: {"points": (M, 2) node coordinates, "modes": (N, M) mode values}; radius: the
+    multimode core radius. l is the dominant azimuthal harmonic on rings inside the core,
+    m - 1 the number of sign changes of that harmonic along the radius. For the guided modes
+    of the lanterns' multimode end it reproduces the ideal step-index order (LP01, LP11, LP21,
+    LP02, LP31, ...); near-cut-off modes, spread into the jacket, may not be readable."""
+    from scipy.interpolate import LinearNDInterpolator
+    f = LinearNDInterpolator(np.asarray(props["points"]), np.asarray(props["modes"])[n])
+    tt = np.linspace(0, 2 * np.pi, 256, endpoint=False)
+    harm = lambda r: np.fft.rfft(np.nan_to_num(f(r * np.cos(tt), r * np.sin(tt))))   # noqa: E731
+    l = int(np.argmax(sum(np.abs(harm(r)[:10]) ** 2 for r in np.linspace(0.2, 0.9, 8) * radius)))
+    prof = np.array([harm(r)[l] for r in np.linspace(0.02, 1.0, 300) * radius])
+    proj = np.real(prof * np.exp(-1j * np.angle(prof[np.argmax(np.abs(prof))])))
+    proj = proj[np.abs(proj) > 1e-3 * np.abs(proj).max()]
+    return f"LP$_{{{l}{1 + int(np.sum(np.diff(np.sign(proj)) != 0))}}}$"
+
+
+def lp_names(props, modes, radius, all_modes=None):
+    """{n: LP name} for the modes n in ``modes``; the two members of a degenerate pair (the
+    cos / sin orientations of an LP_lm with l >= 1) get distinct names, LP_lma and LP_lmb, in
+    index order. all_modes: the modes over which pairs are counted (default ``modes``), so that
+    a mode keeps the same name in figures showing different subsets."""
+    allm = sorted(set(all_modes if all_modes is not None else modes) | set(modes))
+    base = {n: lp_name(props, n, radius) for n in allm}
+    seen, out = {}, {}
+    for n in allm:
+        b = base[n]
+        k = seen.get(b, 0); seen[b] = k + 1
+        pair = sum(1 for m in allm if base[m] == b) > 1
+        out[n] = b.replace("}$", ("\\mathrm{" + "ab"[k] + "}}$") if pair and k < 2 else "}$")
+    return {n: out[n] for n in modes}
 
 
 def export(fig, name, native=False):

@@ -24,7 +24,7 @@ from .sparse import (
 )
 from .zernike import noll_to_nm, zernike, zernike_basis, modal_projector
 from .unwrap import (
-    wrap, phasor_targets, phasor_decode, per_wavelength_features, fit_wrapped_models,
+    wrap, phasor_targets, phasor_decode, PhasorCodec, per_wavelength_features, fit_wrapped_models,
     unwrap, unwrap_all,
 )
 
@@ -34,6 +34,6 @@ __all__ = [
     "n_poly_terms", "poly_features", "omp_fit", "omp_predict", "fit_omp_poly",
     "predict_omp_poly", "n_terms", "fit_dense_poly_ridge", "predict_dense_poly_ridge",
     "noll_to_nm", "zernike", "zernike_basis", "modal_projector",
-    "wrap", "phasor_targets", "phasor_decode", "per_wavelength_features",
+    "wrap", "phasor_targets", "phasor_decode", "PhasorCodec", "per_wavelength_features",
     "fit_wrapped_models", "unwrap", "unwrap_all",
 ]

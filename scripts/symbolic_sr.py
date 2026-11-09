@@ -46,6 +46,20 @@ CLASSES = {"opposite": [2], "adjacent": [0, 4], "next": [1, 3],
            "adjacent-0": [0]}            # piston 0 alone: pooling 0 and 4 through the mirror fails
 PYSR_SECONDS = 600
 OPERON_SECONDS = 600
+N_THREADS = 32
+# Another lantern (e.g. pl19_1200 on its 10000-sample single-wavelength dataset):
+#   SR_DATASET=data/ml/pl19_1200/single.npz SR_LAMBDA=1200 SR_SPLITS=0,6000,8000,10000
+#   SR_OUT=data/ml/pl19_1200/symbolic SR_THREADS=16 python scripts/symbolic_sr.py ...
+# (adds the class "adjacent-4", so that every piston has a class of its own or a pooled one)
+if os.environ.get("SR_DATASET"):
+    DATASET = os.path.join(ROOT, os.environ["SR_DATASET"])
+    LAMBDA_NM = float(os.environ["SR_LAMBDA"])
+    a_, b_, c_, d_ = (int(v) for v in os.environ["SR_SPLITS"].split(","))
+    FIT, ES, VA = slice(a_, b_), slice(b_, c_), slice(c_, d_)
+    N_SR = b_ - a_
+    OUT = os.path.join(ROOT, os.environ["SR_OUT"])
+    N_THREADS = int(os.environ.get("SR_THREADS", N_THREADS))
+    CLASSES = {"opposite": [2], "next": [1, 3], "adjacent-0": [0], "adjacent-4": [4]}
 # Petal angles in the lantern frame (ml_reconstruct.symbolic.petal_angles_mesh of
 # the bundled pupil), so that this script does not need cbeam.
 PETAL_ANGLES_DEG = (120.0, 180.0, -119.8, -59.8, 0.0, 59.6)
@@ -98,7 +112,7 @@ def run_operon(X, y, names):
     from pyoperon.sklearn import SymbolicRegressor
     reg = SymbolicRegressor(allowed_symbols="add,sub,mul,div,square,constant,variable", max_length=60,
                             generations=2000, population_size=2000, pool_size=2000, max_evaluations=10 ** 8,
-                            n_threads=32, objectives=["r2", "length"], random_state=0, max_time=OPERON_SECONDS)
+                            n_threads=N_THREADS, objectives=["r2", "length"], random_state=0, max_time=OPERON_SECONDS)
     reg.fit(X, y)
     front = [(int(m["length"]), m["tree"]) for m in reg.pareto_front_]
     names_map = {i: n for i, n in enumerate(names)}

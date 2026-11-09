@@ -33,6 +33,6 @@ ax.set_xticks([1 / 12, 1 / 6, 1 / 4, 1 / 3, 5 / 12, 1 / 2])
 ax.set_xticklabels(["1/12", "1/6", "1/4", "1/3", "5/12", "1/2"])
 ax.axvline(0.5, color="gray", ls="--", lw=0.6)        # the study range, +-lambda/2
 ax.set_ylim(bottom=0); ax.legend(loc="upper left"); ax.grid(alpha=0.3)
-ax.set_title(r"closest-signal neighbour with pistons $> \lambda/4$ rms away")
+ax.set_title(r"closest-signal neighbour with pistons $> \lambda/4$ rms away, modulo $\lambda$")
 slidefig.export(fig, "ambiguity_vs_range", native=True)
 print("saved")

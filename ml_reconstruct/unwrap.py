@@ -15,7 +15,7 @@ import time
 
 import numpy as np
 
-from .sparse import fit_omp_poly, predict_omp_poly
+from .sparse import fit_omp_poly, predict_omp_poly, fit_dense_poly_ridge, predict_dense_poly_ridge
 
 
 def wrap(x, T):
@@ -37,6 +37,29 @@ def phasor_decode(S, T):
     return np.arctan2(s, c) * T / (2 * np.pi), np.hypot(s, c)
 
 
+class PhasorCodec:
+    """Phasor targets with the interface of the target Standardizer:
+    ``transform`` maps (n, M) pistons [nm] to (n, 2M) targets
+    [sin, cos](2*pi*p/T), ``inverse`` maps predicted targets back to pistons
+    wrapped into [-T/2, T/2). A model that regresses these targets has no jump
+    at +-T/2, where p and p +- T give the same signals. ``fit`` is a no-op (the
+    targets are already bounded), kept so it can replace a Standardizer."""
+
+    outputs_per_piston = 2
+
+    def __init__(self, T: float):
+        self.T = float(T)
+
+    def fit(self, C=None):
+        return self
+
+    def transform(self, C):
+        return phasor_targets(np.asarray(C, float), self.T)
+
+    def inverse(self, Y):
+        return phasor_decode(np.asarray(Y), self.T)[0]
+
+
 def per_wavelength_features(X3, w, fib_use, nb_wl=0):
     """(n, n_wl, n_fib) signals -> (n, d) inputs of the model at wavelength
     index w: fibres fib_use at wavelengths w-nb_wl .. w+nb_wl (clipped)."""
@@ -45,10 +68,19 @@ def per_wavelength_features(X3, w, fib_use, nb_wl=0):
 
 
 def fit_wrapped_models(X3_tr, X3_va, P_tr, P_va, periods, wl_use, fib_use, *,
-                       degree, K, screen, cache, nb_wl=0, rows=None, tag=""):
-    """One degree-``degree`` OMP polynomial model per wavelength in wl_use,
-    regressing the phasor of the piston wrapped at ``periods[w]``.
+                       degree=3, K=None, screen=None, cache, nb_wl=0, rows=None, tag="", model="omp",
+                       twin=None, sig_rows=2000):
+    """One model per wavelength in wl_use of the piston wrapped at ``periods[w]``.
 
+    model : "omp" (polynomial of degree ``degree``, sparse, at most K terms per
+        output, fit_omp_poly), "ridge" (every monomial, ridge-regularised,
+        fit_dense_poly_ridge; K and screen unused: degree 1 is the linear model),
+        both regressing the phasor of the piston; "mlp" (3 x 128 MLP on the
+        phasors, 500 epochs); "closed_form" (the exact forward model of
+        ml_reconstruct.forward fitted at that wavelength -- on channel powers,
+        not normalised -- inverted with forward.invert_fixed, ``twin`` its twin
+        matrix; confidence 1; its training-row error, which weights the unwrap,
+        on the first ``sig_rows`` rows only).
     X3_* : (n, n_wl, n_fib) standardised signals; P_* : (n, M) pistons [nm].
     rows : optional subset of training rows to fit on.
 
@@ -68,10 +100,39 @@ def fit_wrapped_models(X3_tr, X3_va, P_tr, P_va, periods, wl_use, fib_use, *,
         T = periods[w]
         F_tr = per_wavelength_features(X3_tr, w, fib_use, nb_wl)[rows]
         F_va = per_wavelength_features(X3_va, w, fib_use, nb_wl)
-        model = cache(f"{tag}-w{w}", lambda F_tr=F_tr, T=T: fit_omp_poly(
-            F_tr, phasor_targets(P_tr[rows], T), degree, K, screen))
-        g_va, c_va = phasor_decode(predict_omp_poly(model, F_va), T)
-        g_tr, _ = phasor_decode(predict_omp_poly(model, F_tr), T)
+        if model == "omp":
+            m = cache(f"{tag}-w{w}", lambda F_tr=F_tr, T=T: fit_omp_poly(
+                F_tr, phasor_targets(P_tr[rows], T), degree, K, screen))
+            predict = predict_omp_poly
+        elif model == "ridge":
+            m = cache(f"{tag}-w{w}", lambda F_tr=F_tr, T=T: fit_dense_poly_ridge(
+                F_tr, phasor_targets(P_tr[rows], T), degree))
+            predict = predict_dense_poly_ridge
+        elif model == "mlp":
+            from .mlp import train_mlp, mlp_forward_np
+
+            def _fit(F_tr=F_tr, T=T):
+                Y = phasor_targets(P_tr[rows], T)
+                params, _ = train_mlp([F_tr.shape[1], 128, 128, 128, Y.shape[1]], F_tr, Y,
+                                      F_va[:2000], phasor_targets(P_va[:2000], T), epochs=500,
+                                      learning_rate=3e-4, log_every=1000)
+                return {k: [np.asarray(a) for a in v] for k, v in params.items()}
+            m = cache(f"{tag}-w{w}", _fit)
+            predict = mlp_forward_np
+        elif model == "closed_form":
+            from .forward import fit_forward, invert_fixed
+            m = cache(f"{tag}-w{w}", lambda F_tr=F_tr, T=T: fit_forward(P_tr[rows], F_tr, T, normalised=False))
+            g_va = invert_fixed(m, F_va, twin)[0]
+            g_tr = invert_fixed(m, F_tr[:sig_rows], twin)[0]
+            ghat_va[:, :, i], conf_va[:, :, i] = g_va, 1.0
+            sig_va[i] = np.sqrt(np.mean(wrap(g_va - wrap(P_va, T), T) ** 2, axis=0))
+            sig_tr[i] = np.maximum(np.sqrt(np.mean(wrap(g_tr - wrap(P_tr[rows][:sig_rows], T), T) ** 2, axis=0)),
+                                   1e-3)
+            continue
+        else:
+            raise ValueError(f"model must be 'omp', 'ridge', 'mlp' or 'closed_form', not {model!r}")
+        g_va, c_va = phasor_decode(predict(m, F_va), T)
+        g_tr, _ = phasor_decode(predict(m, F_tr), T)
         ghat_va[:, :, i], conf_va[:, :, i] = g_va, c_va
         sig_va[i] = np.sqrt(np.mean(wrap(g_va - wrap(P_va, T), T) ** 2, axis=0))
         sig_tr[i] = np.sqrt(np.mean(wrap(g_tr - wrap(P_tr[rows], T), T) ** 2, axis=0))

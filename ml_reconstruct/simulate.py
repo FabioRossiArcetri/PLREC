@@ -48,7 +48,8 @@ def output_core_xy(p) -> np.ndarray:
 
 def simulate_core_images(p, ifunc, coeff, n_train, *, prop12=None, window=5,
                          grid_resolution=bp.CALIB_GRID_RESOLUTION,
-                         prop_chunk_size=None, centers_by_port=None) -> LanternDataset:
+                         prop_chunk_size=None, centers_by_port=None, extra_opd=None,
+                         field_chunk_size=None) -> LanternDataset:
     """Single-wavelength dataset: ``coeff`` (n, n_modes) [nm] -> per-core camera
     signals (n, n_cores) in port order.
 
@@ -62,13 +63,18 @@ def simulate_core_images(p, ifunc, coeff, n_train, *, prop12=None, window=5,
     centers_by_port : (n_cores, 2) core centres [um] to place the pixel windows
         at, e.g. another dataset's (``dataset_centers``), so that the signals are
         measured exactly as there; None calibrates them on this batch's mean image.
+    extra_opd : optional (n, n_pupil_pixels) OPD [nm] added to the modal OPD of
+        each configuration (e.g. wavefront.psd_screens: errors outside the pistons).
+    field_chunk_size : fields generated at a time (padded FFT grids held in memory;
+        None: the pipeline default, 64 -- ~2.4 GB on the 1600^2 grid).
     """
     if prop12 is None:
         with contextlib.chdir(CBEAM_EXAMPLES):     # its data/ holds the caches
             prop12 = bp.build_and_characterize_lantern(p, reuse_cache=True)
     pipeline = bp.BatchPropagationPipeline(prop12, p, ifunc)
 
-    u0 = pipeline.generate_batch_modal_coefficients(coeff, use_gpu=False)
+    u0 = pipeline.generate_batch_modal_coefficients(coeff, use_gpu=False, extra_opd_batch=extra_opd,
+                                                chunk_size=field_chunk_size)
     uf, _, _ = pipeline.propagate_batch(u0, chunk_size=prop_chunk_size)
     intensity = np.abs(pipeline.reconstruct_batch_output_fields(uf)) ** 2   # (n, n_mesh)
     mesh = pipeline.wvg_props_output["mesh"]

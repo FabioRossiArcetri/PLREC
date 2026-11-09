@@ -22,6 +22,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
+from matplotlib.ticker import MaxNLocator
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLREC = os.path.abspath(os.path.join(HERE, os.pardir, os.pardir))
@@ -35,10 +36,10 @@ from ml_reconstruct.petals import petal_geometry                # noqa: E402
 sys.path.insert(0, HERE)
 import slidefig                                                 # noqa: E402
 
-REF = LANTERN == "pl19_800"            # the reference lantern is in the main talk, the others in the appendix
+REF = LANTERN == "pl19_1200"           # the reference lantern is in the main talk, the others in the appendix
 # figure sizes on the slide (cm): main talk (reference) / appendix (1200 nm lanterns)
 SIZE = {"geometry": (8.6, 4.6) if REF else (7.0, 4.4), "neff_vs_z": (9.5, 5.0) if REF else (7.0, 4.4),
-        "modes_input": (6.6, 3.6), "psf_coupling": (7.6, 6.4) if REF else (9.0, 6.2),
+        "modes_input": (6.6, 6.2), "psf_coupling": (14.0, 5.8) if REF else (14.0, 6.2),
         "transfer_matrix": (9.6, 4.4), "output_face": (14.0, 5.0), "modes_in_pupil": (7.6, 3.2),
         "pupil_petals": (5.2, 5.0)}
 plt.rcParams.update(slidefig.RC)
@@ -108,20 +109,27 @@ def mode_maps(props, idx, half):
     return [griddata(pts, np.abs(np.asarray(props["modes"])[k]) ** 2, (X, Y), fill_value=0) for k in idx], half
 
 
-nshow = 8
+lp_name = slidefig.lp_name
+nshow = min(16, nports)              # 4 x 4; only modes that reach a core (7 for the 7-port lantern)
+# degenerate pairs: LP_lma / LP_lmb, counted over the guided modes (one per core; the
+# extra near-cut-off mode is not readable)
+LP = slidefig.lp_names(win, range(nshow), p["rclad"], all_modes=range(nports))
 maps_in, h_in = mode_maps(win, range(nshow), p["rclad"] * 1.4)
-fig, axes = figure("modes_input", nrows=2, ncols=nshow // 2)
+fig, axes = figure("modes_input", nrows=4, ncols=4)
+for ax in axes.flat[nshow:]:
+    ax.axis("off")
 for k, (ax, m) in enumerate(zip(axes.flat, maps_in)):
     ax.imshow(m, extent=[-h_in, h_in, -h_in, h_in], origin="lower", cmap="magma")
     ax.add_patch(Circle((0, 0), p["rclad"], fill=False, ec="w", lw=0.4, ls="--"))
-    ax.set_title(f"mode {k}", pad=2); ax.axis("off")
+    ax.set_title(f"{k}: {LP[k]}", pad=2); ax.axis("off")
 save(fig, "modes_input")
 
 # ------------------------------------------------------------- PSF on the lantern face and modal coupling
 ref = petal_geometry(np.asarray(ifunc.mask_inf_func) > 0, np.asarray(ifunc.influence_function), 5)
 fg = pipe._field_gen_np
 coeffs = np.zeros((3, fg.num_modes)); coeffs[1, 0] = wl / 4; coeffs[2, 0] = wl / 2
-row_labels = ["flat", "petal 0\n" + r"$\lambda/4$", "petal 0\n" + r"$\lambda/2$"]
+# petal 0 at lambda/4 and at lambda/2: the edge of the single-wavelength range (+-lambda/2)
+row_labels = ["flat", "petal 0\n" + rf"$\lambda/4$ = {wl / 4:.0f} nm", "petal 0\n" + rf"$\lambda/2$ = {wl / 2:.0f} nm"]
 labels = ["flat wavefront", rf"petal 0: $\lambda/4$ ({wl / 4:.0f} nm)", rf"petal 0: $\lambda/2$ ({wl / 2:.0f} nm)"]
 E_foc = fg.apply_ef_to_lantern(fg.generate_field_profiles_batch(coeffs))
 _, padded = fg._pad_geometry(); c = padded // 2; ps = p["pixel_scale_um"]
@@ -131,10 +139,21 @@ ext = [-half_px * ps, half_px * ps, -half_px * ps, half_px * ps]
 with quiet:
     u0, eff = pipe.generate_batch_modal_coefficients(coeffs, use_gpu=False, return_coupling_efficiency=True)
 u0 = np.asarray(u0) * np.asarray(eff)[:, None]
+# the lantern output: power in each single-mode core (share of the coupled light, P / P.sum)
+with quiet:
+    u0n = pipe.generate_batch_modal_coefficients(coeffs, use_gpu=False)
+    uf, _, _ = pipe.propagate_batch(u0n)
+P = np.abs(np.stack([prop12.to_channel_basis(np.asarray(uf)[k]) for k in range(len(uf))])[:, :nports]) ** 2
+# ... as a fraction of the incident power, like the mode powers (lossless: same sums)
+P_inc = P / P.sum(1, keepdims=True) * (np.abs(u0) ** 2).sum(1, keepdims=True)
 
-fig, axes = figure("psf_coupling", nrows=3, ncols=3, gridspec_kw={"width_ratios": [1, 1, 1.5]})
+fig, axes = figure("psf_coupling", nrows=3, ncols=5, gridspec_kw={"width_ratios": [0.9, 0.9, 1.4, 1.4, 1.3]})
+xy = np.asarray(p["output_positions"]) * tf
+rad = 0.47 * np.min(np.hypot(*(xy[1:] - xy[0]).T))
+lim_face = np.abs(xy).max() + 1.05 * rad          # the core pattern fills its panel
 pm = np.where(ref["petal_map"] < 0, np.nan, 0.0)
 ymax = 1.15 * (np.abs(u0) ** 2).max()
+ymax_out = 1.15 * P_inc.max()
 for r in range(3):
     opd = pm.copy(); opd[ref["petal_map"] == 0] = coeffs[r, 0]
     a = axes[r, 0]
@@ -156,8 +175,21 @@ for r in range(3):
     a.text(0.03, 0.92, f"sum {pw.sum():.0%}", transform=a.transAxes, ha="left", va="top")
     if r < 2:
         a.set_xticklabels([])
+    a = axes[r, 3]
+    a.bar(np.arange(nports), P_inc[r], color="#c0504d", width=0.8)
+    a.set_ylim(0, ymax_out); a.locator_params(axis="y", nbins=2)
+    if r < 2:
+        a.set_xticklabels([])
+    a = axes[r, 4]                         # the output face: share of the coupled light per core (%)
+    for (x, y), v in zip(xy, P[r] / P[r].sum()):
+        a.add_patch(Circle((x, y), rad, color=plt.cm.magma(v / 0.25)))
+        a.text(x, y, f"{100 * v:.0f}", ha="center", va="center", fontsize=4.5, color="w" if v < 0.15 else "k")
+    a.set_xlim(-lim_face, lim_face); a.set_ylim(-lim_face, lim_face); a.set_aspect("equal"); a.axis("off")
 axes[0, 0].set_title("pupil"); axes[0, 1].set_title("PSF (log)"); axes[0, 2].set_title("power per mode")
-axes[2, 2].set_xlabel("mode index")
+axes[0, 3].set_title("output: power per core"); axes[0, 4].set_title("output face (%)")
+axes[2, 2].set_xlabel("mode index"); axes[2, 3].set_xlabel("core index")
+for a in axes[:, 2:4].flat:
+    a.xaxis.set_major_locator(MaxNLocator(integer=True))
 save(fig, "psf_coupling")
 
 # ------------------------------------------------------------- transfer matrix
@@ -178,11 +210,6 @@ save(fig, "transfer_matrix")
 np.save(os.path.join(HERE, "figures", "sim", f"{LANTERN}_transfer_matrix.npy"), A)
 
 # ------------------------------------------------------------- output face
-with quiet:
-    u0n = pipe.generate_batch_modal_coefficients(coeffs, use_gpu=False)
-    uf, _, _ = pipe.propagate_batch(u0n)
-P = np.abs(np.stack([prop12.to_channel_basis(np.asarray(uf)[k]) for k in range(len(uf))])[:, :nports]) ** 2
-xy = np.asarray(p["output_positions"]) * tf
 lim = np.abs(xy).max() * 1.3 + 10
 fig, axes = figure("output_face", ncols=3)
 for r, ax in enumerate(axes):
@@ -217,7 +244,7 @@ for ax, n, vals in zip(axes, show, np.moveaxis(interp(GX, GY), -1, 0)):
     ax.imshow(I, cmap="magma", origin="upper")
     ax.contour(pup_mask.astype(float), levels=[0.5], colors="c", linewidths=0.4)
     frac = (I * pup_mask).sum() / I.sum()
-    ax.set_title(f"mode {n}\n{100 * frac:.0f}% on the pupil"); ax.axis("off")
+    ax.set_title(f"mode {n}: {LP.get(n) or lp_name(win, n, p['rclad'])}\n{100 * frac:.0f}% on the pupil"); ax.axis("off")
 save(fig, "modes_in_pupil")
 
 # ------------------------------------------------------------- the ANDES pupil and its petals

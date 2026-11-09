@@ -7,7 +7,10 @@ For each piston range +-f*lambda (f in FRACS), draw n random configurations of
 the 5 petal pistons (uniform, rng=0), compute the normalised output-core powers
 at the design wavelength, and for every configuration find the OTHER one with
 the closest signals. A collision is a pair whose pistons differ by more than
-lambda/4 rms (per piston): the signals alone would point to a wrong solution.
+lambda/4 rms (per piston) MODULO LAMBDA: at one wavelength p and p +- lambda give
+the same signals, so a neighbour across the wrap is the same configuration, not a
+collision. (collision_plain: the same test without the wrap, as first reported.)
+The signals alone would point to a wrong solution.
 Also records how many collisions are twin-image pairs (closer to the twin of
 the configuration than to the configuration itself). Needs the lantern's
 characterization at its design wavelength in cbeam/examples/data.
@@ -29,6 +32,7 @@ os.environ["CBEAM_LANTERN"] = LANTERN
 from sklearn.neighbors import NearestNeighbors                     # noqa: E402
 from ml_reconstruct.simulate import bp, CBEAM_EXAMPLES              # noqa: E402
 from ml_reconstruct.petals import petal_geometry, twin_matrix       # noqa: E402
+from ml_reconstruct.unwrap import wrap                              # noqa: E402
 
 FRACS = [1 / 12, 1 / 6, 1 / 4, 1 / 3, 5 / 12, 1 / 2]
 quiet = contextlib.redirect_stdout(io.StringIO())
@@ -52,16 +56,17 @@ def signals(C):
 
 
 rms = lambda D: np.sqrt(np.mean(D ** 2, axis=-1))                  # noqa: E731
-out = dict(fracs=np.array(FRACS), wavelength_nm=wl, n=N, collision=[], twin_share=[])
+out = dict(fracs=np.array(FRACS), wavelength_nm=wl, n=N, collision=[], twin_share=[], collision_plain=[])
 for f in FRACS:
     C = np.random.default_rng(0).uniform(-f * wl, f * wl, (N, 5))
     S = signals(C)
     _, j = NearestNeighbors(n_neighbors=2).fit(S).kneighbors(S)
     j = j[:, 1]                                                      # the closest OTHER configuration
-    d, dt = rms(C[j] - C), rms(C[j] - C @ T.T)
+    d, dt = rms(wrap(C[j] - C, wl)), rms(wrap(C[j] - C @ T.T, wl))  # piston distances modulo lambda
     coll = d > wl / 4
     out["collision"].append(coll.mean())
+    out["collision_plain"].append((rms(C[j] - C) > wl / 4).mean())
     out["twin_share"].append((dt[coll] < d[coll]).mean() if coll.any() else 0.0)
-    print(f"{LANTERN} +-{f:.3f} lambda: collisions {coll.mean():6.1%}, of which twin pairs "
-          f"{out['twin_share'][-1]:5.1%}", flush=True)
+    print(f"{LANTERN} +-{f:.3f} lambda: collisions {coll.mean():6.1%} (without the wrap "
+          f"{out['collision_plain'][-1]:6.1%}), of which twin pairs {out['twin_share'][-1]:5.1%}", flush=True)
 np.savez(os.path.join(HERE, "figures", "sim", f"{LANTERN}_collisions.npz"), **out)

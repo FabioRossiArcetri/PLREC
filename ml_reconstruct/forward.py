@@ -350,3 +350,77 @@ def unrolled_newton_table(model, S, P, starts, steps=(0, 1, 2, 3)):
             rows.append(dict(start=name, steps=n, rmse=np.sqrt(np.mean(e ** 2)), median=np.median(e),
                              **{"within 1 nm %": 100 * np.mean(e.max(1) < 1)}))
     return pd.DataFrame(rows).pivot(index="start", columns="steps", values=["rmse", "median", "within 1 nm %"])
+
+
+# --------------------------------------------------------------------------- #
+# Inversion with a model-only start and a fixed number of steps
+# --------------------------------------------------------------------------- #
+def _lifted_system(model, S):
+    """In the 30 pair features z the ratio model is linear: (W - s q^T) z = s - a.
+    Returns A (n, n_cores, 30) and b (n, n_cores)."""
+    A = model.W[None] - S[:, :, None] * model.q[None, None, :]
+    return A, S - model.a
+
+
+def _pair_matrix(z):
+    """(n, 30) pair features -> (n, 6, 6) Hermitian M_jk = exp(i D_jk), unit diagonal:
+    the rank-1 matrix u u^H of the petal phasors u_j = exp(i phi_j) when z is exact."""
+    M = np.zeros((len(z), N_PETALS, N_PETALS), complex)
+    M[:, np.arange(N_PETALS), np.arange(N_PETALS)] = 1
+    e = z[:, :15] + 1j * z[:, 15:]
+    M[:, _J, _K] = e
+    M[:, _K, _J] = e.conj()
+    return M
+
+
+def _pistons_of(v, wavelength_nm, ref):
+    """phasor vectors (n, 6) -> pistons (n, 5) relative to the reference petal, in [-lambda/2, lambda/2)."""
+    th = np.angle(v) - np.angle(v[:, [ref]])
+    p = np.delete(th, ref, axis=1) * wavelength_nm / (2 * np.pi)
+    return p - wavelength_nm * np.round(p / wavelength_nm)
+
+
+def spectral_start(model, S, n_proj=5, reg=1e-6):
+    """First estimates from the closed form alone (no other reconstructor), as the
+    spectral initialisation of phase retrieval (Candes et al. 2015): the minimum-norm
+    solution of the lifted linear system, ``n_proj`` alternating projections between
+    its affine solution set and the rank-1 matrices, then the leading eigenvector of
+    the pair matrix. Returns the estimates from the leading and from the second
+    eigenvector, both (n, 5)."""
+    A, b = _lifted_system(model, S)
+    At = np.transpose(A, (0, 2, 1))
+    G = A @ At + reg * np.eye(A.shape[1])
+    z = (At @ np.linalg.solve(G, b[:, :, None]))[:, :, 0]
+    for _ in range(n_proj + 1):
+        _, V = np.linalg.eigh(_pair_matrix(z))
+        p1 = _pistons_of(V[:, :, -1], model.wavelength_nm, model.ref)
+        zr = pair_features(p1, model.wavelength_nm, model.ref)
+        r = b - (A @ zr[:, :, None])[:, :, 0]                 # nearest point of the affine set to zr
+        z = zr + (At @ np.linalg.solve(G, r[:, :, None]))[:, :, 0]
+    p2 = _pistons_of(V[:, :, -2], model.wavelength_nm, model.ref)
+    return p1, p2
+
+
+def invert_fixed(model, S, T=None, n_grid=32, steps=5, n_proj=5):
+    """Inversion with a fixed cost and no learned start: Gauss-Newton, ``steps``
+    iterations each, from (i) the spectral start, (ii) its twin image (T: the
+    twin matrix of ml_reconstruct.petals, optional), (iii) the second-eigenvector
+    start and (iv) ``n_grid`` fixed quasi-random (Sobol) points of the
+    +-lambda/2 cube; per sample the solution with the lowest residual is kept,
+    wrapped into [-lambda/2, lambda/2). Returns (P, residual norm)."""
+    from scipy.stats import qmc
+    lam = model.wavelength_nm
+    p1, p2 = spectral_start(model, S, n_proj)
+    starts = [p1, p2] + ([p1 @ np.asarray(T).T] if T is not None else [])
+    if n_grid:
+        grid = (qmc.Sobol(5, scramble=False).random(n_grid) - 0.5) * lam
+        starts += [np.broadcast_to(g, p1.shape) for g in grid]
+    best, bres = None, None
+    for p0 in starts:
+        p, res = gauss_newton(model, S, np.array(p0, float), steps)
+        if best is None:
+            best, bres = p, res
+        else:
+            m = res < bres
+            best[m], bres[m] = p[m], res[m]
+    return best - lam * np.round(best / lam), bres

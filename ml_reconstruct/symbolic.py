@@ -93,7 +93,13 @@ def decode(sin_hat, cos_hat, wavelength_nm):
 # --------------------------------------------------------------------------- #
 # symbolic-regression results (scripts/symbolic_sr.py)
 # --------------------------------------------------------------------------- #
-CLASSES = {"opposite": [2], "adjacent": [0, 4], "next": [1, 3], "adjacent-0": [0]}
+CLASSES = {"opposite": [2], "adjacent": [0, 4], "next": [1, 3], "adjacent-0": [0], "adjacent-4": [4]}
+# the classes that make a full 5-piston reconstructor: piston -> (class, member index)
+PISTON_CLASS = {0: ("adjacent-0", 0), 1: ("next", 0), 2: ("opposite", 0), 3: ("next", 1), 4: ("adjacent-4", 0)}
+
+
+def _wrapped(e, wavelength_nm):
+    return e - wavelength_nm * np.round(e / wavelength_nm)
 
 
 def count_constants(expr, names):
@@ -132,7 +138,8 @@ def sr_front(res, cls, wavelength_nm):
     rows = []
     for i in range(len(s["complexity"])):
         for j in range(len(c["complexity"])):
-            e_es = decode(s["pred_es"][i], c["pred_es"][j], wavelength_nm) - true_es
+            # errors modulo lambda: an estimate across the wrap is the right piston
+            e_es = _wrapped(decode(s["pred_es"][i], c["pred_es"][j], wavelength_nm) - true_es, wavelength_nm)
             rows.append(dict(complexity=int(s["complexity"][i] + c["complexity"][j]), i=i, j=j,
                              es_rmse=np.sqrt(np.mean(e_es ** 2))))
     df = pd.DataFrame(rows).sort_values(["complexity", "es_rmse"])
@@ -141,13 +148,44 @@ def sr_front(res, cls, wavelength_nm):
         if r.es_rmse < best:
             best = r.es_rmse
             i, j = int(r.i), int(r.j)
-            e_va = decode(s["pred_va"][i], c["pred_va"][j], wavelength_nm) - true_va
-            front.append(dict(complexity=int(r.complexity), es_rmse=r.es_rmse, val_rmse=np.sqrt(np.mean(e_va ** 2)),
+            e_va = _wrapped(decode(s["pred_va"][i], c["pred_va"][j], wavelength_nm) - true_va, wavelength_nm)
+            front.append(dict(complexity=int(r.complexity), i=i, j=j, es_rmse=r.es_rmse,
+                              val_rmse=np.sqrt(np.mean(e_va ** 2)),
                               val_median=np.median(np.abs(e_va)),
                               constants=count_constants(str(s["expression"][i]), names)
                               + count_constants(str(c["expression"][j]), names),
                               sin_expr=str(s["expression"][i]), cos_expr=str(c["expression"][j])))
     return pd.DataFrame(front)
+
+
+def sr_reconstructor(directory, wavelength_nm, engines=("operon", "pysr")):
+    """The best symbolic 5-piston reconstructor found: for each engine, per
+    class of PISTON_CLASS the (sin, cos) expression pair with the lowest
+    held-out RMSE (modulo lambda) on its front; the engine with the lower mean
+    held-out RMSE wins. Returns (engine, P_va (n_va, 5) [nm, in -lambda/2..],
+    constants per piston (5,), {class: front row}) or None without results."""
+    best = None
+    for engine in engines:
+        res = load_sr(directory, engine)
+        classes = {c for c, _ in PISTON_CLASS.values()}
+        if not all((c, t) in res for c in classes for t in ("sin", "cos")):
+            continue
+        rows = {}
+        for c in classes:
+            f = sr_front(res, c, wavelength_nm)
+            rows[c] = f.loc[f.es_rmse.idxmin()]
+        n_va = len(res[("opposite", "sin")]["true_va"])
+        P = np.zeros((n_va, 5)); const = np.zeros(5)
+        for k, (c, m) in PISTON_CLASS.items():
+            r = rows[c]
+            sl = slice(m * n_va, (m + 1) * n_va)
+            P[:, k] = decode(res[(c, "sin")]["pred_va"][int(r.i)][sl], res[(c, "cos")]["pred_va"][int(r.j)][sl],
+                             wavelength_nm)
+            const[k] = r.constants
+        score = np.mean([rows[c].es_rmse for c in rows])
+        if best is None or score < best[0]:
+            best = (score, engine, P, const, rows)
+    return None if best is None else best[1:]
 
 
 def plot_sr_fronts(fronts, refs=None):

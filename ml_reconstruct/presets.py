@@ -21,7 +21,8 @@ _CUBIC_19 = dict(  # 19 core signals: 1539 degree-3 monomials
     omp_record_wb=(500, 1282),     # workbench Part A
     k_table=500, ks_mix=[100, 200, 300, 400, 500], k_importance=1282,
     n_zern=36, zern_spectral=18,
-    k_wrap=1000,                   # per-wavelength OMP budget (of 1539 terms)
+    k_wrap=1282,                   # per-wavelength OMP budget (of 1539 terms; the full natural support)
+    wfe_ks=[100, 300, 600, 1282],    # trainMLP wavefront-error study: OMP budgets scanned
     wl_stride_global=16,           # global OMP: 3 wavelengths x 19 cores = 57 inputs
 )
 
@@ -38,6 +39,7 @@ ML = {
         k_table=60, ks_mix=[5, 10, 20, 30, 60], k_importance=119,
         n_zern=10, zern_spectral=10,   # Z1-Z10: the fewest with rank 7 on the hexagon
         k_wrap=119,
+        wfe_ks=[20, 60, 119],
         wl_stride_global=8,            # 6 wavelengths x 7 cores = 42 inputs
     ),
 }

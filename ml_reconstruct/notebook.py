@@ -145,21 +145,35 @@ def plot_per_piston(x, Y, xlabel, ylabel, title, logy=False, ref=None, ref_label
 # --------------------------------------------------------------------------- #
 # scoring and comparison
 # --------------------------------------------------------------------------- #
-def score(results, name, C_pred, C_true, ys=None, note=""):
+def score(results, name, C_pred, C_true, ys=None, note="", period=None, wrapped=None):
     """Store and print the per-piston RMSE [nm] of C_pred against C_true.
 
     ys : the target Standardizer when C_pred is in standardised units (it is
         inverted first); None when C_pred is already in nm.
+    period, wrapped : at one wavelength, the wavelength [nm] and a dict that
+        receives the RMSE of the errors taken modulo it (rmse_nm(..., period)),
+        also printed.
     """
     if ys is not None:
         C_pred = ys.inverse(C_pred)
     r = results[name] = rmse_nm(C_pred, C_true)
     print(f"{name:22s} mean {r.mean():8.2f} nm   per piston {np.round(r, 2)}{note}")
+    if period is not None:
+        rw = rmse_nm(C_pred, C_true, period)
+        if wrapped is not None:
+            wrapped[name] = rw
+        print(f"{'  modulo lambda':22s} mean {rw.mean():8.2f} nm   per piston {np.round(rw, 2)}")
     return r
 
 
-def n_dof(model):
-    """Fitted degrees of freedom **per piston**: every model here is fitted
+def n_dof(model, outputs_per_piston=1):
+    """Fitted degrees of freedom **per piston**: ``outputs_per_piston`` (2 for
+    phasor targets, PhasorCodec) times the degrees of freedom per output."""
+    return outputs_per_piston * _n_dof(model)
+
+
+def _n_dof(model):
+    """Fitted degrees of freedom **per output**: every model here is fitted
     independently for each piston, so this counts one piston's parameters and
     never their sum over the five pistons -- the non-zero coefficients and the
     intercept of a linear or OMP fit, an MLP's parameters divided by its number
@@ -176,13 +190,13 @@ def n_dof(model):
         n_out = int(np.size(biases[-1])) if biases else 1
         return total / max(n_out, 1)
     if isinstance(model, tuple) and len(model) == 3:              # (poly, scaler, ridge or OMP fits)
-        return n_dof(model[2])
+        return _n_dof(model[2])
     if isinstance(model, RidgeCV):
         return int(np.shape(model.coef_)[-1] + 1)                 # one row of coef_ is one piston
     if isinstance(model, tuple) and len(model) == 2:              # one (omp, sel) fit: already per piston
         return int(np.count_nonzero(model[0].coef_)) + 1
     if isinstance(model, list):                                   # one model per piston
-        return float(np.mean([n_dof(m) for m in model]))
+        return float(np.mean([_n_dof(m) for m in model]))
     if hasattr(model, "coef_"):                                   # e.g. ElasticNetCV (multi-output)
         c = np.asarray(model.coef_)
         rows = c.reshape(-1, c.shape[-1]) if c.ndim > 1 else c.reshape(1, -1)
@@ -190,7 +204,8 @@ def n_dof(model):
     raise TypeError(f"no degree-of-freedom count for {type(model).__name__}")
 
 
-def show_results(results, title, ref=None, logy=True, sort=False, dof=None, exclude=()):
+def show_results(results, title, ref=None, logy=True, sort=False, dof=None, exclude=(),
+                 ylabel="validation RMSE (nm)"):
     """Table and grouped bar chart of a results dict {name: per-piston RMSE};
     ref: the name whose mean is drawn as a dashed line; sort: order the models
     by decreasing mean RMSE; dof: {name: degrees of freedom PER PISTON},
@@ -213,7 +228,7 @@ def show_results(results, title, ref=None, logy=True, sort=False, dof=None, excl
         plt.axhline(results[ref].mean(), color="k", ls="--", lw=1)
     if logy:
         plt.yscale("log")
-    plt.xticks(x, [f"piston {k}" for k in x]); plt.ylabel("validation RMSE (nm)")
+    plt.xticks(x, [f"piston {k}" for k in x]); plt.ylabel(ylabel)
     plt.title(title); plt.legend(ncol=4, fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.08))
     plt.grid(True, axis="y", ls=":", alpha=0.5); plt.tight_layout(); plt.show()
     if dof:
@@ -226,7 +241,7 @@ def show_results(results, title, ref=None, logy=True, sort=False, dof=None, excl
         plt.xscale("log")
         if logy:
             plt.yscale("log")
-        plt.xlabel("degrees of freedom per piston"); plt.ylabel("mean validation RMSE (nm)")
+        plt.xlabel("degrees of freedom per piston"); plt.ylabel("mean " + ylabel)
         plt.title("accuracy vs. degrees of freedom per piston"); plt.grid(alpha=0.3, which="both")
         plt.tight_layout(); plt.show()
 
@@ -507,24 +522,33 @@ def kept_by_degree(fits, degree):
     return np.array([[np.sum(degree[g] == d) for d in degs] for g in kept])
 
 
-def omp_sweep(cache, prefix, Z_tr, Y_tr, Z_va, C_va, ys, Ks, screen):
-    """{K: (mean kept terms, mean validation RMSE [nm])} of the OMP fits at
-    each term budget K."""
+def omp_sweep(cache, prefix, Z_tr, Y_tr, Z_va, C_va, ys, Ks, screen, period=None):
+    """{K: (mean kept terms, mean validation RMSE [nm], the same modulo
+    ``period`` or nan)} of the OMP fits at each term budget K."""
     from .sparse import n_terms
     sweep = {}
     for K in Ks:
         fits = omp_fits(cache, prefix, Z_tr, Y_tr, K, screen)
-        sweep[K] = (np.mean([n_terms(f) for f in fits]),
-                    rmse_nm(ys.inverse(omp_predict_all(Z_va, fits)), C_va).mean())
-        print(f"K={K:5d}: {sweep[K][0]:7.1f} terms/piston   mean RMSE {sweep[K][1]:5.1f} nm")
+        C_hat = ys.inverse(omp_predict_all(Z_va, fits))
+        sweep[K] = (np.mean([n_terms(f) for f in fits]), rmse_nm(C_hat, C_va).mean(),
+                    rmse_nm(C_hat, C_va, period).mean() if period is not None else np.nan)
+        print(f"K={K:5d}: {sweep[K][0]:7.1f} terms/piston   mean RMSE {sweep[K][1]:5.1f} nm"
+              + (f"   modulo lambda {sweep[K][2]:5.1f} nm" if period is not None else ""))
     return sweep
 
 
 def plot_omp_sweep(sweep, title):
-    """Validation RMSE against the number of kept terms of an omp_sweep."""
+    """Validation RMSE against the number of kept terms of an omp_sweep (and,
+    when the sweep has it, the RMSE of the errors modulo the wavelength)."""
+    v = np.array(list(sweep.values()))
     plt.figure(figsize=(6, 4))
-    plt.plot([v[0] for v in sweep.values()], [v[1] for v in sweep.values()], "ks-")
-    plt.xlabel("terms per piston"); plt.ylabel("mean validation RMSE (nm)")
+    if v.shape[1] > 2 and np.isfinite(v[:, 2]).all():      # the figure of merit when it exists
+        plt.semilogy(v[:, 0], v[:, 2], "ks-")
+        plt.ylabel("mean validation RMSE modulo lambda (nm)")
+    else:
+        plt.plot(v[:, 0], v[:, 1], "ks-")
+        plt.ylabel("mean validation RMSE (nm)")
+    plt.xlabel("terms per fit")
     plt.title(title); plt.grid(alpha=0.3); plt.tight_layout(); plt.show()
 
 

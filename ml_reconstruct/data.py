@@ -78,6 +78,16 @@ def subsample_rows(n: int, share: float, seed: int = 0) -> np.ndarray:
     return np.sort(np.random.default_rng(seed).choice(n, size=n_want, replace=False))
 
 
-def rmse_nm(pred, true) -> np.ndarray:
-    """Per-column RMSE of predictions vs truth, both in nm."""
-    return np.sqrt(np.mean((np.asarray(pred) - np.asarray(true)) ** 2, axis=0))
+def rmse_nm(pred, true, period=None) -> np.ndarray:
+    """Per-column RMSE of predictions vs truth, both in nm.
+
+    period : with a wavelength (nm), the errors are taken modulo it first
+        (unwrap.wrap). At one wavelength p and p +- lambda give the same signals, so
+        near the edges of a +-lambda/2 range an estimate off by ~lambda is the
+        right piston, seen across the wrap; this is the error that matters.
+    """
+    e = np.asarray(pred) - np.asarray(true)
+    if period is not None:
+        from .unwrap import wrap
+        e = wrap(e, period)
+    return np.sqrt(np.mean(e ** 2, axis=0))

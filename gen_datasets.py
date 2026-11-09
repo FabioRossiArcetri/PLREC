@@ -41,7 +41,9 @@ SPAN_NM = S["spectral_span_nm"]                 # spectral: +-8 lambda
 CHUNKS = 10
 # Memory per spectral piece: field generation holds FIELD_CHUNK padded FFT
 # grids (1600 x 1600 complex) at a time, propagation PROP_CHUNK fields.
-FIELD_CHUNK, PROP_CHUNK = 8, 500
+# (250 fields per propagation chunk: the solver keeps every step of a chunk, so this
+#  roughly halves that part of the peak; results agree with 500 to the solver tolerance)
+FIELD_CHUNK, PROP_CHUNK = 8, 250
 
 
 def _ifunc():
@@ -59,7 +61,8 @@ def do_single():
     ds = make_single_dataset(N_SINGLE, N_SINGLE_TRAIN, S["single_span_nm"], lantern=S["lantern"],
                              prop_chunk_size=1000)
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    ds.save(out)
+    ds.save(out[:-4] + ".tmp.npz")
+    os.replace(out[:-4] + ".tmp.npz", out)
     print(f"saved {out}  {ds.signals.shape}  ({time.time()-t:.0f} s)")
 
 
@@ -79,7 +82,11 @@ def do_spectral_chunk(w, c):
         return
     t = time.time()
     ds, coeff = _piece(w, slice(c * (N_TOTAL // CHUNKS), (c + 1) * (N_TOTAL // CHUNKS)))
-    np.savez(out, signals=ds.signals, coeff=coeff, wavelength_nm=WL[w])
+    # written under a temporary name and renamed: a piece that exists is complete
+    # (pieces made elsewhere can be copied in while a run is going on)
+    tmp = out[:-4] + ".tmp.npz"
+    np.savez(tmp, signals=ds.signals, coeff=coeff, wavelength_nm=WL[w])
+    os.replace(tmp, out)
     print(f"saved {out}  {ds.signals.shape}  ({time.time()-t:.0f} s)")
 
 
