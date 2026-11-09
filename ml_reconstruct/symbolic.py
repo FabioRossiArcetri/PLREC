@@ -197,7 +197,7 @@ def plot_sr_fronts(fronts, refs=None):
         if len(f):
             plt.plot(f.complexity, f.val_rmse, "o-", ms=3, label=label, color=plt.cm.tab10(i))
     for j, (label, v) in enumerate((refs or {}).items()):
-        plt.axhline(v, ls="--", lw=1, color=plt.cm.Dark2(j), label=label)
+        plt.axhline(v, ls=("--", ":", "-.")[j % 3], lw=1, color="0.35", label=label)   # grey: not a front colour
     plt.yscale("log"); plt.xlabel("total complexity (nodes of the sin + cos expressions)")
     plt.ylabel("validation RMSE of the piston (nm)"); plt.grid(alpha=0.3, which="both")
     plt.legend(fontsize=7, ncol=2); plt.title("symbolic reconstructors: accuracy vs. complexity")

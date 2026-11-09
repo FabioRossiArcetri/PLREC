@@ -401,17 +401,18 @@ def spectral_start(model, S, n_proj=5, reg=1e-6):
     return p1, p2
 
 
-def invert_fixed(model, S, T=None, n_grid=32, steps=5, n_proj=5):
+def invert_fixed(model, S, T=None, n_grid=32, steps=5, n_proj=5, second=True):
     """Inversion with a fixed cost and no learned start: Gauss-Newton, ``steps``
     iterations each, from (i) the spectral start, (ii) its twin image (T: the
     twin matrix of ml_reconstruct.petals, optional), (iii) the second-eigenvector
     start and (iv) ``n_grid`` fixed quasi-random (Sobol) points of the
     +-lambda/2 cube; per sample the solution with the lowest residual is kept,
-    wrapped into [-lambda/2, lambda/2). Returns (P, residual norm)."""
+    wrapped into [-lambda/2, lambda/2). second=False drops (iii). With
+    steps=0 the best start is returned as is. Returns (P, residual norm)."""
     from scipy.stats import qmc
     lam = model.wavelength_nm
     p1, p2 = spectral_start(model, S, n_proj)
-    starts = [p1, p2] + ([p1 @ np.asarray(T).T] if T is not None else [])
+    starts = [p1] + ([p2] if second else []) + ([p1 @ np.asarray(T).T] if T is not None else [])
     if n_grid:
         grid = (qmc.Sobol(5, scramble=False).random(n_grid) - 0.5) * lam
         starts += [np.broadcast_to(g, p1.shape) for g in grid]

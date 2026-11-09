@@ -117,18 +117,23 @@ def dataset_centers(ds) -> np.ndarray:
 
 
 def simulate_spectra(base_params, ifunc, coeff, n_train, wavelengths_nm,
-                     prop_chunk_size=None, **pipeline_kwargs) -> LanternDataset:
+                     prop_chunk_size=None, extra_opd=None, field_chunk_size=None,
+                     **pipeline_kwargs) -> LanternDataset:
     """Spectral dataset: ``coeff`` (n, n_modes) [nm] -> per-channel coupled
     power fractions (n, n_wl, n_cores), one lantern characterization per
     wavelength (MultiWavelengthPropagationPipeline; ``pipeline_kwargs`` are
     passed to it, e.g. verbose=False). prop_chunk_size: propagate this many
-    fields at a time (None: all at once), to bound the memory."""
+    fields at a time (None: all at once), to bound the memory. extra_opd: optional
+    (n, n_pupil_pixels) OPD [nm] added to each configuration (the same screen at
+    every wavelength); field_chunk_size: fields generated at a time."""
     import multi_wvl as mw
 
     mwp = mw.MultiWavelengthPropagationPipeline(
         base_params, ifunc, wavelengths_nm, **pipeline_kwargs)
     with contextlib.chdir(CBEAM_EXAMPLES):         # its data/ holds the caches
-        power, wl = mwp.get_power_spectra(coeff, prop_chunk_size=prop_chunk_size)  # (n_wl, n, n_cores)
+        power, wl = mwp.get_power_spectra(coeff, prop_chunk_size=prop_chunk_size,
+                                          gen_chunk_size=field_chunk_size,
+                                          extra_opd_batch=extra_opd)                # (n_wl, n, n_cores)
     return LanternDataset(
         signals=np.ascontiguousarray(power.transpose(1, 0, 2)),
         coeff=np.asarray(coeff, float), n_train=int(n_train),

@@ -236,8 +236,10 @@ def show_results(results, title, ref=None, logy=True, sort=False, dof=None, excl
         for i, m in enumerate(names):
             if m in dof:
                 plt.plot(dof[m], results[m].mean(), "o", ms=8, color=plt.cm.tab10(i % 10))
-                plt.annotate(m + (" (stored values)" if m == "kNN" else ""), (dof[m], results[m].mean()),
-                             fontsize=8, xytext=(5, 3), textcoords="offset points")
+                # short labels (the common " + unwrap" suffix dropped), alternating above / below
+                label = m.replace(" + unwrap", "") + (" (stored values)" if m == "kNN" else "")
+                plt.annotate(label, (dof[m], results[m].mean()), fontsize=7,
+                             xytext=(5, 4 if i % 2 == 0 else -10), textcoords="offset points")
         plt.xscale("log")
         if logy:
             plt.yscale("log")

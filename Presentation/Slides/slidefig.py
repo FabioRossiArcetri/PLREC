@@ -27,7 +27,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt                      # noqa: E402
 import numpy as np                                  # noqa: E402
-from matplotlib.collections import Collection, PathCollection   # noqa: E402
+from matplotlib.collections import Collection, PathCollection
+from matplotlib.colors import to_rgba
+from matplotlib.ticker import AutoMinorLocator, LogLocator, MaxNLocator   # noqa: E402
 from matplotlib.legend import Legend                # noqa: E402
 from matplotlib.lines import Line2D                 # noqa: E402
 from matplotlib.patches import Patch                # noqa: E402
@@ -66,6 +68,398 @@ def _sim(lantern, fig, w, h, **o):
     return f"{lantern}_{fig}", (("sim", f"{lantern}_{fig}"), w, h, o)
 
 
+# --------------------------------------------------------------------------- #
+# one colour per reconstructor, in every figure
+#
+# The notebooks plot with matplotlib's default cycle, so a figure's colour depends on
+# the order in which the methods happen to be drawn: the bar charts sort by accuracy,
+# the wavefront-error plot uses a fixed order, and the same method ends up with a
+# different colour on neighbouring slides. The figures are re-drawn here, so the colour
+# is set here too, keyed on the method and not on the drawing order.
+# --------------------------------------------------------------------------- #
+CYCLE = plt.rcParams["axes.prop_cycle"].by_key()["color"]      # tab10
+PALETTE = {"linear": CYCLE[0], "symbolic": CYCLE[1], "dense d2": CYCLE[2],
+           "dense d3": CYCLE[3], "omp": CYCLE[4], "closed form": CYCLE[5],
+           "mlp": CYCLE[6]}
+# degrees of freedom per piston, to recognise a method in a figure that carries no legend
+DOF = {
+    "pl19_1200": {"single": {"linear": 40, "symbolic": 58, "dense d2": 420, "dense d3": 3080,
+                             "omp": 2562, "closed form": 124, "mlp": 7375},
+                  "spectral": {"linear": 840, "dense d2": 8820, "omp": 53886,
+                               "dense d3": 64680, "mlp": 154871, "closed form": 2474}},
+}
+
+
+def method_key(label):
+    """'sparse poly (OMP), K=1282 (2,562 dof/piston)' -> 'omp'"""
+    t = (label or "").lower()
+    if not t or t.startswith("_"):
+        return None
+    for key in ("mlp", "closed form", "closed-form", "omp", "sparse",
+                "symbolic", "degree 3", "degree 2", "linear"):
+        if key in t:
+            return {"sparse": "omp", "degree 2": "dense d2", "degree 3": "dense d3"}.get(key, key)
+    return None
+
+
+def _rgb(value):
+    """('black' | 'none' | (r, g, b) | array) -> rounded (r, g, b) tuple, or None."""
+    try:
+        arr = np.atleast_2d(np.asarray(value, dtype=float))
+    except (TypeError, ValueError):
+        try:
+            arr = np.atleast_2d(np.asarray(to_rgba(value), dtype=float))
+        except (TypeError, ValueError):
+            return None
+    if arr.size < 3:
+        return None
+    return tuple(round(float(x), 4) for x in arr[0][:3])
+
+
+def _colour_of(handle):
+    for getter in ("get_color", "get_facecolor", "get_edgecolor"):
+        try:
+            c = getattr(handle, getter)()
+        except Exception:
+            continue
+        rgb = _rgb(c)
+        if rgb is not None:
+            return rgb
+    return None
+
+
+def colour_map(fig):
+    """{old colour: canonical colour} from the legends of the figure."""
+    cmap = {}
+    legs = list(fig.legends)
+    for ax in fig.axes:
+        if ax.get_legend() is not None:
+            legs.append(ax.get_legend())
+    for leg in legs:
+        for text, handle in zip(leg.get_texts(), leg.legend_handles):
+            key = method_key(text.get_text())
+            old = _colour_of(handle)
+            if key and old is not None:
+                cmap[old] = PALETTE[key]
+    return cmap
+
+
+def dof_recolour(fig, table):
+    """Colour the points of a legend-less dof plot by their abscissa.
+
+    Each point is placed at the degrees of freedom of its method, which are far apart,
+    so the position identifies the method without any help from the current colour.
+    Returns the number of points recoloured.
+    """
+    n = 0
+    for ax in fig.axes:
+        for art in list(ax.lines) + list(ax.collections):
+            xy = _xy_of(art)
+            if xy is None:
+                continue
+            xs, _ = xy
+            if not xs.size:
+                continue
+            x = float(np.nanmedian(xs))
+            key = min(table, key=lambda k: abs(table[k] - x) / max(1.0, table[k]))
+            if abs(table[key] - x) / max(1.0, table[key]) > 0.10:
+                continue
+            colour = PALETTE[key]
+            try:
+                art.set_color(colour)
+            except Exception:
+                pass
+            for setter in ("set_markerfacecolor", "set_markeredgecolor"):
+                try:
+                    getattr(art, setter)(colour)
+                except Exception:
+                    pass
+            for setter in ("set_facecolor", "set_edgecolor"):
+                try:
+                    getattr(art, setter)(colour)
+                except Exception:
+                    pass
+            n += 1
+    return n
+
+
+def dof_colour_map(fig, table):
+    """{old colour: canonical colour} for a plot with no legend.
+
+    The dof table is the key: the points are far apart on the abscissa, so each one
+    identifies its method exactly. Text annotations label the points but sit at the
+    same coordinates, so they are only used for methods the table does not know.
+    """
+    cmap = {}
+    for ax in fig.axes:
+        arts = [a for a in list(ax.lines) + list(ax.collections) if _xy_of(a) is not None]
+        rest = []
+        for art in arts:
+            xs, _ = _xy_of(art)
+            if not xs.size:
+                continue
+            x = float(np.nanmedian(xs))
+            key = min(table, key=lambda k: abs(table[k] - x) / max(1.0, table[k]))
+            if abs(table[key] - x) / max(1.0, table[key]) < 0.10:      # the same point
+                old = _colour_of(art)
+                if old is not None:
+                    cmap[old] = PALETTE[key]
+            else:
+                rest.append((art, x))
+        # anything the table does not place: take the label nearest in x
+        for art, x in rest:
+            for txt in ax.texts:
+                key = method_key(txt.get_text())
+                if key is None:
+                    continue
+                tx = txt.get_position()[0]
+                if abs(np.log10(max(tx, 1e-9)) - np.log10(max(x, 1e-9))) < 0.15:
+                    old = _colour_of(art)
+                    if old is not None:
+                        cmap[old] = PALETTE[key]
+                    break
+    return cmap
+
+
+def _xy_of(art):
+    try:
+        data = art.get_offsets() if isinstance(art, PathCollection) else None
+        if data is not None and len(data):
+            return np.asarray(data)[:, 0], np.asarray(data)[:, 1]
+        x, y = art.get_data()
+        return np.asarray(x, dtype=float), np.asarray(y, dtype=float)
+    except Exception:
+        return None
+
+
+def apply_colours(fig, cmap):
+    """Recolour every artist, and the legend handles, through *cmap*."""
+    if not cmap:
+        return 0
+    n = 0
+    for art in fig.findobj(Line2D):
+        for name in ("color", "markerfacecolor", "markeredgecolor"):
+            try:
+                cur = art.get_color() if name == "color" else getattr(art, "get_" + name)()
+            except Exception:
+                continue
+            key = _rgb(cur)
+            if key is not None and key in cmap:
+                if name == "color":
+                    art.set_color(cmap[key])
+                else:
+                    getattr(art, "set_" + name)(cmap[key])
+                n += 1
+    for art in fig.findobj(Patch):
+        for name in ("facecolor", "edgecolor"):
+            key = _rgb(getattr(art, "get_" + name)())
+            if key is not None and key in cmap:
+                getattr(art, "set_" + name)(cmap[key])
+                n += 1
+    for art in fig.findobj(Collection):
+        for name in ("facecolor", "edgecolor"):
+            try:
+                cols = getattr(art, "get_" + name)()
+            except Exception:
+                continue
+            cols = np.atleast_2d(np.asarray(cols, dtype=float))
+            new = np.array(cols)
+            hit = False
+            for i, row in enumerate(cols):
+                key = _rgb(row)
+                if key is not None and key in cmap:
+                    new[i, :3] = cmap[key]
+                    hit = True
+            if hit:
+                getattr(art, "set_" + name)(new)
+                n += 1
+    legs = list(fig.legends)
+    for ax in fig.axes:
+        if ax.get_legend() is not None:
+            legs.append(ax.get_legend())
+    for leg in legs:
+        for handle in leg.legend_handles:
+            for name in ("color", "facecolor", "edgecolor"):
+                try:
+                    key = _rgb(getattr(handle, "get_" + name)())
+                except Exception:
+                    continue
+                if key is not None and key in cmap:
+                    try:
+                        getattr(handle, "set_" + name)(cmap[key])
+                        n += 1
+                    except Exception:
+                        pass
+    return n
+
+
+def symbolic_colours(fig):
+    """Symbolic regression: its own scheme, the best search of each class set in orange.
+
+    The curves are the Operon Pareto fronts of the four piston classes plus two reference
+    lines. The class with the lowest held-out error keeps orange and a heavier line; the
+    others go muted grey-blue/green/purple, the references grey.
+    """
+    muted = ["#4c72b0", "#55a868", "#8172b2", "#937860"]
+    ax = fig.axes[0]
+    curves = [ln for ln in ax.lines
+              if (ln.get_label() or "").lower().startswith(("operon", "pysr"))]
+    if not curves:
+        return 0
+    best = min(curves, key=lambda ln: np.nanmin(np.asarray(ln.get_ydata(), float)))
+    i = 0
+    for ln in curves:
+        if ln is best:
+            ln.set_color("#ff7f0e")
+            ln.set_linewidth(max(ln.get_linewidth(), 1.4))
+            ln.set_zorder(6)
+        else:
+            ln.set_color(muted[i % len(muted)])
+            ln.set_zorder(4)
+            i += 1
+    for ln in ax.lines:
+        if (ln.get_label() or "").lower() in ("linear", "dense poly, degree 2", "no skill"):
+            ln.set_color("#7a7a7a")
+    handles = curves + [ln for ln in ax.lines
+                        if (ln.get_label() or "").lower() in ("linear", "dense poly, degree 2")]
+    labels = [ln.get_label() for ln in handles]
+    old = ax.get_legend()
+    ncol = getattr(old, "_ncols", 1) if old is not None else 1
+    ax.legend(handles=handles, labels=labels, ncol=ncol, fontsize=FONT_PT)
+    return len(curves)
+
+
+def place_labels(fig, spec):
+    """Put each method label at its own point plus an offset in axes fractions.
+
+    spec: {label text: (dx, dy, ha, va)}, offsets relative to the point the label belongs
+    to (the nearest one in log-x). These labels are drawn in axes coordinates, so the
+    offsets live there too.
+    """
+    n = 0
+    for ax in fig.axes:
+        texts = [t for t in ax.texts if (t.get_text() or "").strip()]
+        if not texts:
+            continue
+        pts = []
+        for art in list(ax.lines) + list(ax.collections):
+            xy = _xy_of(art)
+            if xy is None:
+                continue
+            for x, y in zip(np.atleast_1d(xy[0]), np.atleast_1d(xy[1])):
+                if np.isfinite(x) and np.isfinite(y) and x > 0 and y > 0:
+                    pts.append((float(x), float(y)))
+        xlim, ylim = ax.get_xlim(), ax.get_ylim()
+        if not pts or xlim[0] <= 0 or ylim[0] <= 0:
+            continue
+        lx0, lx1 = np.log10(xlim[0]), np.log10(xlim[1])
+        ly0, ly1 = np.log10(ylim[0]), np.log10(ylim[1])
+        for t in texts:
+            row = spec.get(t.get_text().strip())
+            if row is None:
+                continue
+            dx, dy, ha, va = row
+            tx, ty = t.get_position()
+            px, py = min(pts, key=lambda q: abs(np.log10(q[0]) - np.log10(max(tx, 1e-9))))
+            fx = (np.log10(px) - lx0) / (lx1 - lx0)
+            fy = (np.log10(py) - ly0) / (ly1 - ly0)
+            t.set_position((float(np.clip(fx + dx, 0.02, 0.98)),
+                            float(np.clip(fy + dy, 0.03, 0.97))))
+            t.set_ha(ha)
+            t.set_va(va)
+            n += 1
+    return n
+
+
+def tidy_labels(fig, scale=0.80):
+    """Smaller method labels, anchored to their point and pushed outwards.
+
+    The plots that label points with text put the text at the point itself, so it sits on
+    the marker and, for the points on the right, overruns the frame. Each label is
+    re-anchored to its nearest point, offset up or down depending on which half of the
+    axes it is in, and kept inside the axes.
+    """
+    n = 0
+    try:
+        fig.canvas.draw()            # the axes limits must be real before clamping
+    except Exception:
+        pass
+    for ax in fig.axes:
+        texts = [t for t in ax.texts if (t.get_text() or "").strip()]
+        if not texts:
+            continue
+        pts = []
+        for art in list(ax.lines) + list(ax.collections):
+            xy = _xy_of(art)
+            if xy is None:
+                continue
+            for x, y in zip(np.atleast_1d(xy[0]), np.atleast_1d(xy[1])):
+                if np.isfinite(x) and np.isfinite(y) and x > 0 and y > 0:
+                    pts.append((float(x), float(y)))
+        if not pts:
+            continue
+        xlim, ylim = ax.get_xlim(), ax.get_ylim()
+        if xlim[0] <= 0 or ylim[0] <= 0:          # not a log-log plot after all
+            continue
+        mid_x = np.sqrt(xlim[0] * xlim[1])
+        mid_y = np.sqrt(ylim[0] * ylim[1])
+        for t in texts:
+            t.set_fontsize(max(3.2, t.get_fontsize() * scale))
+            tx, ty = t.get_position()
+            # these labels are placed in axes fractions, not in data coordinates
+            if t.get_transform() is ax.transData:
+                continue
+            right = tx > 0.5
+            dx = -0.015 if right else 0.015
+            dy = 0.035 if ty < 0.5 else -0.035
+            t.set_position((float(np.clip(tx + dx, 0.02, 0.98)),
+                            float(np.clip(ty + dy, 0.03, 0.97))))
+            t.set_ha("right" if right else "left")
+            t.set_va("bottom" if dy > 0 else "top")
+            n += 1
+    return n
+
+
+def rebuild_legend(fig):
+    """Rebuild a bar chart's legend from its containers.
+
+    The notebooks sort the legend entries by accuracy but pass the handles in drawing
+    order, so the pickled legend pairs a label with another method's colour. The
+    containers carry label and colour together, so the legend is rebuilt from them.
+    """
+    n = 0
+    for ax in fig.axes:
+        conts = [c for c in ax.containers if (c.get_label() or "").strip("_")]
+        if len(conts) < 2:
+            continue
+        old = ax.get_legend()
+        if old is None:
+            continue
+        kw = {"title": old.get_title().get_text() or None, "loc": "best", "frameon": old.get_frame_on()}
+        ncol = getattr(old, "_ncols", 1) or 1
+        ax.legend(handles=conts, labels=[c.get_label() for c in conts],
+                  ncol=ncol, fontsize=FONT_PT, **{k: v for k, v in kw.items() if v is not None})
+        n += 1
+    return n
+
+
+def canonical_colours(name, fig):
+    """Set the one-colour-per-method palette on a figure loaded from a pickle."""
+    if "sr_fronts" in name or "sr_scatter" in name:
+        return symbolic_colours(fig)
+    cmap = colour_map(fig)
+    if cmap:
+        n = apply_colours(fig, cmap)
+        return n + rebuild_legend(fig)
+    # no legend: the points are placed at the dofs of their method
+    src = SLOTS[name][0]
+    kind = "spectral" if "spectral" in name else "single"
+    table = DOF.get(src[1], {}).get(kind, {}) if src[0] == "nb" else {}
+    if table:
+        return dof_recolour(fig, table)
+    return 0
+
+
 def _nb(lantern, fig, notebook, cell, k, w, h, run=None, **o):
     return f"{lantern}_{fig}", (("nb", run or lantern, notebook, cell, k), w, h, o)
 
@@ -90,6 +484,8 @@ SLOTS = dict([
     _sim("pl19_800", "pupil_petals", 5.6, 5.0),
     _nb("pl19_800", "sample_spectra", "workbench", 40, 0, W_HALF, 4.4, title=False),
     _nb("pl19_800", "core0_ramp", "multi_wavelength", 10, 0, 7.8, 5.2, title=False),
+    _nb("pl19_1200", "fiber_spectra", "multi_wavelength", 8, 1, W_HALF, 4.9, title=False, legend="right", ncol=1),
+    _nb("pl19_1200", "fiber_throughput", "multi_wavelength", 9, 2, W_HALF, 4.9, title=False, legend="right", ncol=1),
     # part 4: comparison
     _nb("pl19_800", "wrapped_rmse", "PL_EML", 5, 0, 10.0, 4.6, title=False, legend="right", ylabel="wrapped RMSE (nm)"),
     _nb("pl19_800", "unwrap_scatter", "PL_EML", 7, 0, 14.0, 3.9, **SCATTER),
@@ -99,10 +495,29 @@ SLOTS = dict([
     # single wavelength with a wavefront error besides the pistons (f^-2, models trained at each level)
     *[_nb(L, "wfe", "trainMLP", 23, 0, 7.6, 5.6, title=False, legend="below", ncol=2) for L in ("pl7_1200", "pl19_1200")],
     # the same comparison with the errors taken modulo lambda (third figure of the cell)
-    _nb("pl19_1200", "sr_fronts", "workbench", 25, 0, W_WIDE, 5.0, title=False, legend="below", ncol=2),
+    _nb("pl19_1200", "sr_fronts", "workbench", 25, 0, 7.2, 5.0, title=False, legend="below", ncol=2),
+    _nb("pl19_1200", "cubic_svd", "trainMLP", 14, 1, 6.4, 4.6, title=False),
+    # per-wavelength models trained with 30 nm of wavefront error + unwrap (wfe_unwrap.ipynb)
+    _nb("pl19_1200", "wfe_wrapped", "wfe_unwrap", 3, 0, 11.0, 4.4, title=False, legend="right", ylabel="wrapped RMSE (nm)"),
+    _nb("pl19_1200", "wfe_unwrap_scatter", "wfe_unwrap", 4, 0, 14.0, 3.9, **SCATTER),
+    _nb("pl19_1200", "wfe_err_dist", "wfe_unwrap", 6, 0, W_FULL, 4.4, title=False,
+        legend=None),
+    _nb("pl19_1200", "wfe_spectral_comparison", "wfe_unwrap", 5, 0, W_HALF, 4.6, title=False, legend="below", ncol=2),
+    _nb("pl19_1200", "wfe_spectral_dof", "wfe_unwrap", 5, 1, W_HALF, 4.6, title=False, no_tidy=True),
+    _nb("pl19_1200", "cf_convergence", "workbench", 23, 0, 11.0, 3.5, title=False, dense_y=True),
+    _nb("pl19_1200", "sr_scatter", "workbench", 25, 1, 13.0, 3.1, **SCATTER),
     # the final comparisons: per-piston bars sorted by decreasing error, and mean error vs dof
-    *[_nb(L, "single_dof", "workbench", 32, 3, W_HALF, 4.6, title=False) for L in ("pl7_1200", "pl19_1200")],
-    *[_nb(L, "spectral_dof", "workbench", 57, 1, W_HALF, 4.6, title=False) for L in ("pl7_1200", "pl19_1200")],
+    _nb("pl7_1200", "single_dof", "workbench", 32, 3, W_HALF, 4.6, title=False),
+    _nb("pl19_1200", "single_dof", "workbench", 32, 3, W_HALF, 4.6, title=False,
+        labels=dict(linear=(-0.015, 0.05, 'right', 'bottom'),
+                                            **{'symbolic regression': (0.015, -0.06, 'left', 'top'),
+                                               'dense poly, degree 2': (0.02, 0.04, 'left', 'bottom'),
+                                               'dense poly, degree 3': (-0.02, 0.05, 'right', 'bottom'),
+                                               'sparse poly (OMP), K=1282': (-0.02, 0.05, 'right', 'bottom'),
+                                               'closed form': (0.02, 0.03, 'left', 'bottom'),
+                                               'MLP': (-0.02, 0.04, 'right', 'bottom')})),
+    *[_nb(L, "spectral_dof", "workbench", 57, 1, W_HALF, 4.6, title=False, no_tidy=True)
+      for L in ("pl7_1200", "pl19_1200")],
     *[_nb(L, "single_comparison_mod", "workbench", 32, 2, W_HALF, 4.6, title=False, legend="below", ncol=2)
       for L in ("pl7_1200", "pl19_1200")],
     *[_nb(L, "spectral_comparison", "workbench", 57, 0, W_HALF, 4.6, title=False, legend="below", ncol=2)
@@ -163,11 +578,23 @@ def nb_cell_id(notebook_path, cell):
 
 
 def restyle(fig, w_cm, h_cm, legend=None, ncol=None, title=True, suptitle=False, retitle=(),
-            short=True, relabel=(), share=False, nbins=None, xlabel=None, ylabel=None, font=FONT_PT):
+            short=True, relabel=(), share=False, nbins=None, xlabel=None, ylabel=None,
+            font=FONT_PT, dense_y=False, labels=None):
     """Resize to the slot and set every text to one size, then lay out again.
     Lines, markers and scatter points shrink with the figure (they were sized
     for the notebook's larger figure), within readable minima."""
     s = min(1.0, max(0.35, w_cm * CM / fig.get_size_inches()[0]))
+    if dense_y:                       # more labelled ticks on the first axes only
+        for ax in fig.axes[:1]:
+            if ax.get_yscale() == "log":
+                # two labels per decade (1 and 3): denser without the label pile-up
+                ax.yaxis.set_major_locator(LogLocator(base=10, subs=(1.0, 3.0), numticks=30))
+                ax.yaxis.set_minor_locator(LogLocator(base=10, subs=(),
+                                                      numticks=30))
+            else:
+                ax.yaxis.set_major_locator(MaxNLocator(nbins=9, prune=None))
+                ax.yaxis.set_minor_locator(AutoMinorLocator(2))
+                ax.tick_params(axis="y", which="minor", length=1.6, width=0.4)
     fig.set_size_inches(w_cm * CM, h_cm * CM)
     fig.set_dpi(300)
     # the deck does not show the no-skill / chance reference: drop it everywhere
@@ -320,6 +747,8 @@ def render(name, quiet=False):
         return False
     with open(path, "rb") as f:
         fig = pickle.load(f)
+    if src[0] == "nb":
+        canonical_colours(name, fig)      # one colour per method, whatever the draw order
     if src[0] == "sim":            # drawn at slide size by make_figures / make_ambiguity_figure: as is
         os.makedirs(OUT, exist_ok=True)
         fig.savefig(os.path.join(OUT, name + ".pdf"))
@@ -327,7 +756,12 @@ def render(name, quiet=False):
         plt.close(fig)
         print(f"  ok {name}  (as drawn)")
         return True
-    restyle(fig, w, h, **opts)
+    restyle(fig, w, h, **{k: v for k, v in opts.items()
+                          if k not in ('no_tidy', 'labels')})
+    if opts.get('labels'):
+        place_labels(fig, opts['labels'])
+    elif not opts.get('no_tidy'):
+        tidy_labels(fig)                     # smaller, offset method labels where a plot has them
     # the saved (tight) box must fit the slot: shrink the canvas until it does
     for _ in range(6):
         fig.canvas.draw()

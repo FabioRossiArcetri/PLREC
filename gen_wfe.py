@@ -10,6 +10,10 @@ The cores are measured at the clean dataset's pixel windows.
 
     CBEAM_LANTERN=pl19_1200 python gen_wfe.py piece <rms_nm> <chunk>   # one piece
     CBEAM_LANTERN=pl19_1200 python gen_wfe.py assemble <rms_nm>        # -> <data_dir>/single_wfe<rms>.npz
+
+WFE_PSD=ao instead uses an SCAO residual (ml_reconstruct.wavefront.ao_residual_screens:
+corrected modes below the M4 control frequency, 79/2 cycles per pupil, the uncorrected
+fitting error beyond it) and writes <data_dir>/single_ao<rms>.npz (parts in ao_parts/).
 """
 import os
 import sys
@@ -24,22 +28,23 @@ os.environ.setdefault("CBEAM_BACKEND", "numpy")
 import ml_reconstruct as ml                                                     # noqa: E402
 from ml_reconstruct.presets import settings                                     # noqa: E402
 from ml_reconstruct.simulate import bp, simulate_core_images, dataset_centers   # noqa: E402
-from ml_reconstruct.wavefront import psd_screens                                # noqa: E402
+from ml_reconstruct.wavefront import psd_screens, ao_residual_screens           # noqa: E402
 
 S = settings()
 DATA = os.path.join(ROOT, S["data_dir"])
-PARTS = os.path.join(DATA, "wfe_parts")
+KIND = "ao" if os.environ.get("WFE_PSD") == "ao" else "wfe"   # the screen model and file prefix
+PARTS = os.path.join(DATA, f"{KIND}_parts")
 N, CHUNKS = 10000, 5
 F_MAX = 10.0                         # cycles per pupil diameter (see the docstring)
 
 
 def out_path(rms):
-    return os.path.join(DATA, f"single_wfe{rms:g}.npz")
+    return os.path.join(DATA, f"single_{KIND}{rms:g}.npz")
 
 
 def piece(rms, c):
     os.makedirs(PARTS, exist_ok=True)
-    out = os.path.join(PARTS, f"wfe{rms:g}_c{c}.npz")
+    out = os.path.join(PARTS, f"{KIND}{rms:g}_c{c}.npz")
     if os.path.exists(out):
         print("already present:", out)
         return
@@ -52,7 +57,10 @@ def piece(rms, c):
     pistons_if = np.asarray(ifunc.influence_function)[:5]
     n = rows.stop - rows.start
     seed = int(rms * 1000) + c                       # one independent stream per (rms, chunk)
-    opd = psd_screens(n, mask, rms, rng=seed, remove=pistons_if, f_max=F_MAX)
+    if KIND == "ao":
+        opd = ao_residual_screens(n, mask, rms, rng=seed + 7, remove=pistons_if)
+    else:
+        opd = psd_screens(n, mask, rms, rng=seed, remove=pistons_if, f_max=F_MAX)
     ds = simulate_core_images(p, ifunc, clean.coeff[rows], 0, prop_chunk_size=250,
                               centers_by_port=dataset_centers(clean), extra_opd=opd,
                               field_chunk_size=8)   # bounded memory, many pieces in parallel
@@ -66,13 +74,17 @@ def assemble(rms):
     clean = ml.LanternDataset.load(os.path.join(ROOT, S["single"]))
     sig, coeff = [], []
     for c in range(CHUNKS):
-        f = np.load(os.path.join(PARTS, f"wfe{rms:g}_c{c}.npz"))
+        f = np.load(os.path.join(PARTS, f"{KIND}{rms:g}_c{c}.npz"))
         sig.append(f["signals"]); coeff.append(f["coeff"])
     coeff = np.concatenate(coeff)
     assert np.allclose(coeff, clean.coeff)
     meta = dict(clean.meta)
-    meta.update(wavefront_error=f"f^-2 PSD phase screens, {rms:g} nm rms, f_max {F_MAX:g} cycles/D, "
-                                f"global and petal pistons removed (ml_reconstruct.wavefront.psd_screens)")
+    meta.update(wavefront_error=(
+        f"SCAO residual, {rms:g} nm rms: corrected band f < 39.5 cycles/D (41% of the variance, ~f^-5/3), "
+        f"fitting error beyond (von Karman f^-11/3); petal pistons removed (wavefront.ao_residual_screens)"
+        if KIND == "ao" else
+        f"f^-2 PSD phase screens, {rms:g} nm rms, f_max {F_MAX:g} cycles/D, "
+        f"global and petal pistons removed (ml_reconstruct.wavefront.psd_screens)"))
     ds = ml.LanternDataset(signals=np.concatenate(sig), coeff=coeff, n_train=clean.n_train,
                            core_xy=clean.core_xy, wavelengths_nm=clean.wavelengths_nm, meta=meta)
     ds.save(out_path(rms))

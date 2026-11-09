@@ -93,7 +93,8 @@ def huber_loss(y_true: jnp.ndarray, y_pred: jnp.ndarray, delta: float = 1.0) -> 
 def train_mlp(layer_sizes: Sequence[int], X_train, Y_train, X_val, Y_val, *,
               epochs: int = 500, batch_size: int = 128, learning_rate: float = 3e-4,
               lr_schedule: str = "constant", init_seed: int = 0, train_seed: int = 1,
-              log_every: int = 100):
+              log_every: int = 100, init_params: Dict | None = None,
+              history: Dict | None = None, eval_train: bool = False):
     """Train with Adam on minibatches reshuffled every epoch (the last partial
     batch is dropped). Each epoch is one jit-compiled ``lax.scan`` over its
     minibatches, so the data stays on the device and Python only loops over
@@ -102,13 +103,27 @@ def train_mlp(layer_sizes: Sequence[int], X_train, Y_train, X_val, Y_val, *,
     lr_schedule : "constant", or "cosine" (decays from learning_rate to 1% of
         it over the whole run).
 
+    init_params, history : continue an existing run. The epochs are appended to
+        ``history`` and the epoch with the lowest validation loss of the whole
+        run is kept (for the epochs already in ``history`` only the returned
+        parameters are available, so the best epoch of the new part counts from
+        the weights handed in).
+
+    eval_train : also record the training loss without dropout, on the whole
+        training set, in ``history["train_eval"]``. The plain ``train`` entry is
+        the mean minibatch loss *with* dropout switched on, so it sits above the
+        validation loss; ``train_eval`` is the like-for-like curve.
+
     Returns ``(params, history)``: the parameters of the epoch with the lowest
     validation loss, and ``{"train": [...], "val": [...], "best_epoch": int,
     "seconds": float}`` (epochs counted from 1).
     """
     X_train, Y_train = jnp.asarray(X_train), jnp.asarray(Y_train)
     X_val, Y_val = jnp.asarray(X_val), jnp.asarray(Y_val)
-    params = init_mlp_params(list(layer_sizes), random.PRNGKey(init_seed))
+    if init_params is None:
+        params = init_mlp_params(list(layer_sizes), random.PRNGKey(init_seed))
+    else:
+        params = init_params
     n_steps = X_train.shape[0] // batch_size
     if lr_schedule == "cosine":
         lr = optax.cosine_decay_schedule(learning_rate, decay_steps=epochs * n_steps, alpha=0.01)
@@ -138,21 +153,30 @@ def train_mlp(layer_sizes: Sequence[int], X_train, Y_train, X_val, Y_val, *,
         return params, opt_state, key, losses.mean(), val
 
     key = random.PRNGKey(train_seed)
-    best, best_val, best_epoch = params, np.inf, 0
-    train_hist, val_hist = [], []
+    train_hist = list(history["train"]) if history else []
+    val_hist = list(history["val"]) if history else []
+    eval_hist = list(history.get("train_eval", [])) if history else []
+    best, best_val = params, np.inf
+    best_epoch = int(history.get("best_epoch", 0)) if history else 0
+    if val_hist:                        # continuing: the weights handed in are the best so far
+        best_val = float(min(val_hist[-1], val_hist[-1]))
     t0 = time.time()
     for epoch in range(1, epochs + 1):
         params, opt_state, key, tr, va = run_epoch(params, opt_state, key)
         tr, va = float(tr), float(va)
         train_hist.append(tr)
         val_hist.append(va)
+        if eval_train:
+            eval_hist.append(float(huber_loss(Y_train, mlp_forward(params, X_train))))
         if va < best_val:
-            best, best_val, best_epoch = params, va, epoch
+            best, best_val, best_epoch = params, va, len(val_hist)
         if log_every and (epoch % log_every == 0 or epoch == 1):
             print(f"  epoch {epoch:5d}  train {tr:.3e}  val {va:.3e}  "
                   f"({time.time() - t0:.0f} s)")
     history = {"train": train_hist, "val": val_hist, "best_epoch": best_epoch,
                "seconds": time.time() - t0}
+    if eval_hist:
+        history["train_eval"] = eval_hist
     return best, history
 
 
