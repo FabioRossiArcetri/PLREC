@@ -70,7 +70,7 @@ ax[0].bar(x, [r[2] for r in rows], color=[P[r[1]] for r in rows], width=0.7)
 for i, r in enumerate(rows):
     ax[0].text(i, r[2] * 1.6, f"{r[2]:.3g}" if r[2] >= 0.01 else "<0.01", ha="center", va="bottom")
 ax[0].set_yscale("log"); ax[0].set_ylim(top=1e4)
-ax[0].set_xticks(x, [r[0] for r in rows]); ax[0].set_ylabel(r"RMSE modulo $\lambda$ (nm)")
+ax[0].set_xticks(x, [r[0] for r in rows]); ax[0].set_ylabel("RMSE (nm)")
 ax[0].set_title("by decreasing error (test set)"); ax[0].grid(alpha=0.3, axis="y", which="both")
 for i, r in enumerate(rows):
     ax[1].loglog(DOF[r[1]], r[2], "o", color=P[r[1]], ms=3.5)

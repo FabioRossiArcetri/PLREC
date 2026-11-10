@@ -494,7 +494,7 @@ SLOTS = dict([
     *[_nb(L, "single_comparison", "workbench", 32, 0, W_HALF, 4.6, title=False, legend="below", ncol=2)
       for L in ("pl7_1200", "pl19_1200")],
     # single wavelength with a wavefront error besides the pistons (f^-2, models trained at each level)
-    *[_nb(L, "wfe", "trainMLP", 23, 0, 7.6, 5.6, title=False, legend="below", ncol=2) for L in ("pl7_1200", "pl19_1200")],
+    *[_nb(L, "wfe", "trainMLP", 23, 0, 7.6, 5.6, title=False, legend="below", ncol=2, ylabel="RMSE (nm)") for L in ("pl7_1200", "pl19_1200")],
     # the same comparison with the errors taken modulo lambda (third figure of the cell)
     _nb("pl19_1200", "sr_fronts", "workbench", 25, 0, 7.2, 5.0, title=False, legend="below", ncol=2),
     _nb("pl19_1200", "cubic_svd", "trainMLP", 14, 1, 6.4, 4.6, title=False),

@@ -11,6 +11,7 @@ second of the 41). Needs the lantern's characterization at those wavelengths.
 
     CBEAM_LANTERN=pl19_1200 python gen_wfe_spectral.py piece <rms> <w> <chunk>
     CBEAM_LANTERN=pl19_1200 python gen_wfe_spectral.py assemble <rms>
+    (WFE_PSD=ao: SCAO residual screens, WFE_INBAND: their variance share below f_c, default 0.41)
         -> <data_dir>/spectral_wfe<rms>_21wl.npz   (N, 21, n_cores), first N_TRAIN rows train
 """
 import os
@@ -33,6 +34,7 @@ S = settings()
 BASE = get_simulation_parameters(lantern=S["lantern"])
 DATA = os.path.join(ROOT, S["data_dir"])
 KIND = "ao" if os.environ.get("WFE_PSD") == "ao" else "wfe"   # WFE_PSD=ao: SCAO residual screens
+INBAND = float(os.environ.get("WFE_INBAND", "0.41"))   # SCAO residual: variance share below f_c (0.46: the ANDES pyramid loop)
 TEST = os.environ.get("WFE_TEST") == "1"   # an independent test set: new pistons (rng=1) and screens
 SUFFIX = "_test" if TEST else ""
 PARTS = os.path.join(DATA, f"{KIND}{SUFFIX}_spectral_parts")
@@ -61,7 +63,7 @@ def piece(rms, w, c):
     mask = np.asarray(ifunc.mask_inf_func) > 0
     seed = int(rms * 1000) + 100 + c + (500 if TEST else 0)                                            # one stream per chunk:
     pist = np.asarray(ifunc.influence_function)[:5]                              # same at every wl
-    opd = (ao_residual_screens(len(coeff), mask, rms, rng=seed + 7, remove=pist) if KIND == "ao"
+    opd = (ao_residual_screens(len(coeff), mask, rms, rng=seed + 7, remove=pist, inband_share=INBAND) if KIND == "ao"
            else psd_screens(len(coeff), mask, rms, rng=seed, remove=pist, f_max=F_MAX))
     ds = simulate_spectra(BASE, ifunc, coeff, 0, [WL[w]], prop_chunk_size=250, field_gen_chunk_size=8,
                           extra_opd=opd, verbose=False)
@@ -80,7 +82,7 @@ def assemble(rms):
                         wavelengths_nm=WL,
                         meta={"measurement": "channel power / incident power, per wavelength",
                               "lantern": S["lantern"],
-                              "wavefront_error": (f"SCAO residual ({KIND}), " if KIND == "ao" else "f^-2 screens, ") + f"{rms:g} nm rms, f_max {F_MAX:g} cycles/D, "
+                              "wavefront_error": (f"SCAO residual ({KIND}, in-band share {INBAND:g}), " if KIND == "ao" else "f^-2 screens, ") + f"{rms:g} nm rms, f_max {F_MAX:g} cycles/D, "
                                                  f"global and petal pistons removed; same OPD at every wavelength"})
     out = os.path.join(DATA, f"spectral_{KIND}{rms:g}_21wl{SUFFIX}.npz")
     ds.save(out)
