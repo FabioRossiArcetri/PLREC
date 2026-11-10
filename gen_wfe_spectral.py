@@ -33,9 +33,11 @@ S = settings()
 BASE = get_simulation_parameters(lantern=S["lantern"])
 DATA = os.path.join(ROOT, S["data_dir"])
 KIND = "ao" if os.environ.get("WFE_PSD") == "ao" else "wfe"   # WFE_PSD=ao: SCAO residual screens
-PARTS = os.path.join(DATA, f"{KIND}_spectral_parts")
+TEST = os.environ.get("WFE_TEST") == "1"   # an independent test set: new pistons (rng=1) and screens
+SUFFIX = "_test" if TEST else ""
+PARTS = os.path.join(DATA, f"{KIND}{SUFFIX}_spectral_parts")
 WL = np.linspace(*BASE["band_nm"], 41)[::2]          # the 21 wavelengths of the unwrap
-N, N_TRAIN, CHUNKS = 10000, 8000, 5
+N, N_TRAIN, CHUNKS = (2000, 0, 1) if TEST else (10000, 8000, 5)
 N_SPECTRAL = 50000                                    # the spectral dataset's draw (rng=0)
 F_MAX = 10.0
 
@@ -53,10 +55,11 @@ def piece(rms, w, c):
     t = time.time()
     rows = slice(c * N // CHUNKS, (c + 1) * N // CHUNKS)
     span = S["spectral_span_nm"]
-    coeff = create_random_aberration_configs(N_SPECTRAL, 5, -span, span, rng=0)[0][:N][rows]
+    coeff = (create_random_aberration_configs(N, 5, -span, span, rng=1)[0][rows] if TEST else
+             create_random_aberration_configs(N_SPECTRAL, 5, -span, span, rng=0)[0][:N][rows])
     ifunc = _ifunc()
     mask = np.asarray(ifunc.mask_inf_func) > 0
-    seed = int(rms * 1000) + 100 + c                                            # one stream per chunk:
+    seed = int(rms * 1000) + 100 + c + (500 if TEST else 0)                                            # one stream per chunk:
     pist = np.asarray(ifunc.influence_function)[:5]                              # same at every wl
     opd = (ao_residual_screens(len(coeff), mask, rms, rng=seed + 7, remove=pist) if KIND == "ao"
            else psd_screens(len(coeff), mask, rms, rng=seed, remove=pist, f_max=F_MAX))
@@ -73,13 +76,13 @@ def assemble(rms):
     sig = np.stack([np.concatenate([np.load(os.path.join(PARTS, f"{KIND}{rms:g}_wl{w:02d}_c{c}.npz"))["signals"]
                                     for c in range(CHUNKS)]) for w in range(len(WL))], axis=1)
     coeff = np.concatenate([np.load(os.path.join(PARTS, f"{KIND}{rms:g}_wl00_c{c}.npz"))["coeff"] for c in range(CHUNKS)])
-    ds = LanternDataset(signals=sig, coeff=coeff, n_train=N_TRAIN, core_xy=output_core_xy(BASE),
+    ds = LanternDataset(signals=sig, coeff=coeff, n_train=0 if TEST else N_TRAIN, core_xy=output_core_xy(BASE),
                         wavelengths_nm=WL,
                         meta={"measurement": "channel power / incident power, per wavelength",
                               "lantern": S["lantern"],
                               "wavefront_error": (f"SCAO residual ({KIND}), " if KIND == "ao" else "f^-2 screens, ") + f"{rms:g} nm rms, f_max {F_MAX:g} cycles/D, "
                                                  f"global and petal pistons removed; same OPD at every wavelength"})
-    out = os.path.join(DATA, f"spectral_{KIND}{rms:g}_21wl.npz")
+    out = os.path.join(DATA, f"spectral_{KIND}{rms:g}_21wl{SUFFIX}.npz")
     ds.save(out)
     print("saved", out, sig.shape)
 

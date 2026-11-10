@@ -33,13 +33,15 @@ from ml_reconstruct.wavefront import psd_screens, ao_residual_screens           
 S = settings()
 DATA = os.path.join(ROOT, S["data_dir"])
 KIND = "ao" if os.environ.get("WFE_PSD") == "ao" else "wfe"   # the screen model and file prefix
-PARTS = os.path.join(DATA, f"{KIND}_parts")
-N, CHUNKS = 10000, 5
+TEST = os.environ.get("WFE_TEST") == "1"   # an independent test set: new pistons (rng=1) and screens
+SUFFIX = "_test" if TEST else ""
+PARTS = os.path.join(DATA, f"{KIND}{SUFFIX}_parts")
+N, CHUNKS = (2000, 1) if TEST else (10000, 5)
 F_MAX = 10.0                         # cycles per pupil diameter (see the docstring)
 
 
 def out_path(rms):
-    return os.path.join(DATA, f"single_{KIND}{rms:g}.npz")
+    return os.path.join(DATA, f"single_{KIND}{rms:g}{SUFFIX}.npz")
 
 
 def piece(rms, c):
@@ -56,16 +58,18 @@ def piece(rms, c):
     mask = np.asarray(ifunc.mask_inf_func) > 0
     pistons_if = np.asarray(ifunc.influence_function)[:5]
     n = rows.stop - rows.start
-    seed = int(rms * 1000) + c                       # one independent stream per (rms, chunk)
+    seed = int(rms * 1000) + c + (500 if TEST else 0)   # one independent stream per (rms, chunk)
+    coeff = (bp.create_random_aberration_configs(N, 5, -S["single_span_nm"], S["single_span_nm"], rng=1)[0][rows]
+             if TEST else clean.coeff[rows])
     if KIND == "ao":
         opd = ao_residual_screens(n, mask, rms, rng=seed + 7, remove=pistons_if)
     else:
         opd = psd_screens(n, mask, rms, rng=seed, remove=pistons_if, f_max=F_MAX)
-    ds = simulate_core_images(p, ifunc, clean.coeff[rows], 0, prop_chunk_size=250,
+    ds = simulate_core_images(p, ifunc, coeff, 0, prop_chunk_size=250,
                               centers_by_port=dataset_centers(clean), extra_opd=opd,
                               field_chunk_size=8)   # bounded memory, many pieces in parallel
     tmp = out[:-4] + ".tmp.npz"
-    np.savez(tmp, signals=ds.signals, coeff=clean.coeff[rows], seed=seed)
+    np.savez(tmp, signals=ds.signals, coeff=coeff, seed=seed)
     os.replace(tmp, out)
     print(f"saved {out} {ds.signals.shape} ({time.time() - t:.0f} s)")
 
@@ -77,7 +81,8 @@ def assemble(rms):
         f = np.load(os.path.join(PARTS, f"{KIND}{rms:g}_c{c}.npz"))
         sig.append(f["signals"]); coeff.append(f["coeff"])
     coeff = np.concatenate(coeff)
-    assert np.allclose(coeff, clean.coeff)
+    if not TEST:
+        assert np.allclose(coeff, clean.coeff)
     meta = dict(clean.meta)
     meta.update(wavefront_error=(
         f"SCAO residual, {rms:g} nm rms: corrected band f < 39.5 cycles/D (41% of the variance, ~f^-5/3), "
@@ -85,7 +90,7 @@ def assemble(rms):
         if KIND == "ao" else
         f"f^-2 PSD phase screens, {rms:g} nm rms, f_max {F_MAX:g} cycles/D, "
         f"global and petal pistons removed (ml_reconstruct.wavefront.psd_screens)"))
-    ds = ml.LanternDataset(signals=np.concatenate(sig), coeff=coeff, n_train=clean.n_train,
+    ds = ml.LanternDataset(signals=np.concatenate(sig), coeff=coeff, n_train=0 if TEST else clean.n_train,
                            core_xy=clean.core_xy, wavelengths_nm=clean.wavelengths_nm, meta=meta)
     ds.save(out_path(rms))
     print("saved", out_path(rms), ds.signals.shape)

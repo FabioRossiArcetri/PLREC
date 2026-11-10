@@ -238,12 +238,15 @@ def apply_colours(fig, cmap):
         return 0
     n = 0
     for art in fig.findobj(Line2D):
+        # read all three colours before setting any: the marker colours follow the line
+        # colour, so setting the line first would remap them a second time (a chain)
+        cur = {}
         for name in ("color", "markerfacecolor", "markeredgecolor"):
             try:
-                cur = art.get_color() if name == "color" else getattr(art, "get_" + name)()
+                cur[name] = _rgb(art.get_color() if name == "color" else getattr(art, "get_" + name)())
             except Exception:
-                continue
-            key = _rgb(cur)
+                cur[name] = None
+        for name, key in cur.items():
             if key is not None and key in cmap:
                 if name == "color":
                     art.set_color(cmap[key])
@@ -484,8 +487,6 @@ SLOTS = dict([
     _sim("pl19_800", "pupil_petals", 5.6, 5.0),
     _nb("pl19_800", "sample_spectra", "workbench", 40, 0, W_HALF, 4.4, title=False),
     _nb("pl19_800", "core0_ramp", "multi_wavelength", 10, 0, 7.8, 5.2, title=False),
-    _nb("pl19_1200", "fiber_spectra", "multi_wavelength", 8, 1, W_HALF, 4.9, title=False, legend="right", ncol=1),
-    _nb("pl19_1200", "fiber_throughput", "multi_wavelength", 9, 2, W_HALF, 4.9, title=False, legend="right", ncol=1),
     # part 4: comparison
     _nb("pl19_800", "wrapped_rmse", "PL_EML", 5, 0, 10.0, 4.6, title=False, legend="right", ylabel="wrapped RMSE (nm)"),
     _nb("pl19_800", "unwrap_scatter", "PL_EML", 7, 0, 14.0, 3.9, **SCATTER),
